@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Slate C: Compile C to wasm</title>
+  <title>Slate C Compiler</title>
   <link rel="stylesheet" href="assets/codemirror.min.css">
   <link rel="stylesheet" href="assets/codemirror-dialog.min.css">
   <link rel="stylesheet" href="assets/codemirror-material-darker.min.css">
@@ -11,23 +11,34 @@
 </head>
 <body>
   <main>
-    <h1>Slate C: Compile C to wasm</h1>
+    <h1>Slate C Compiler</h1>
     <div class="toolbar">
       <div class="row">
         <select id="examples" aria-label="Example">
-          <option value="42">Return 42</option>
-          <option value="17">Return 17</option>
+          <option value="return42">Return 42</option>
+          <option value="arithmetic">Functions and globals</option>
+          <option value="loop">Loop</option>
+          <option value="strings">Strings and data</option>
+          <option value="floats">Floating point</option>
         </select>
         <select id="keymap" aria-label="Editor key bindings">
           <option value="default">Standard</option>
           <option value="vim">Vim</option>
           <option value="emacs">Emacs</option>
         </select>
-        <span class="target">Target: WebAssembly</span>
+        <select id="target" aria-label="Target">
+          <option value="x86_64-unknown-linux-gnu">x86_64</option>
+          <option value="aarch64-unknown-linux-gnu">aarch64</option>
+        </select>
       </div>
+      <label class="flag-row">C compiler flags <input id="c-flags" value="-std=c17, -ffreestanding" spellcheck="false" placeholder="-std=c17, -DVALUE=42"></label>
+      <label class="flag-row">Cranelift flags <input id="cranelift-flags" value="opt_level=speed" spellcheck="false" placeholder="opt_level=speed"></label>
+      <details class="settings"><summary>Cranelift settings</summary><input id="flag-filter" aria-label="Filter Cranelift settings" placeholder="Filter settings"><div id="flag-settings"></div></details>
       <div class="row">
         <button id="compile" type="button" disabled>Compile and run</button>
-        <button id="download" type="button" class="secondary" disabled>Download Wasm</button>
+        <button id="cancel" type="button" class="secondary" disabled>Stop</button>
+        <button id="download-object" type="button" class="secondary" disabled>Download object</button>
+        <button id="share" type="button" class="secondary">Share</button>
         <span id="status" role="status">Loading compiler…</span>
       </div>
     </div>
@@ -43,21 +54,21 @@
       </section>
       <section aria-labelledby="clif-heading">
         <div class="section-header">
-          <h2 id="clif-heading">Cranelift IR</h2>
-          <button id="copy-clif" type="button" class="copy-button" aria-label="Copy Cranelift IR" title="Copy Cranelift IR" disabled>Copy</button>
+          <h2 id="clif-heading"><select id="output-view" aria-label="Compiler output"><option value="clif">Cranelift IR</option><option value="assembly">Assembly</option><option value="binary">Machine code (hex)</option><option value="elf">ELF object (hex)</option></select></h2>
+          <select id="asm-syntax" aria-label="x86 assembly syntax" hidden><option value="intel">Intel</option><option value="att">AT&amp;T</option></select>
+          <button id="copy-clif" type="button" class="copy-button" aria-label="Copy compiler output" title="Copy compiler output" disabled>Copy</button>
         </div>
         <div id="output-shell" class="editor-shell">
-          <textarea id="clif" aria-label="Cranelift IR" spellcheck="false"></textarea>
+          <textarea id="clif" aria-label="Compiler output" spellcheck="false"></textarea>
           <pre id="diagnostics" role="alert" hidden></pre>
         </div>
       </section>
     </div>
     <div class="execution" aria-live="polite">
       <span class="execution-label">Execution</span>
-      <span id="execution">Waiting for compilation</span>
-      <span id="wasm-size"></span>
+      <span id="execution">Waiting</span>
     </div>
-    <p class="scope">We currently support <code>int main(void)</code> returning a signed 32-bit integer constant.</p>
+    <p class="scope"><a href="licenses/EMULATOR-SOURCES.md">Emulator sources</a></p>
     <noscript>This compiler requires JavaScript and WebAssembly.</noscript>
   </main>
   <script src="assets/codemirror.min.js"></script>
@@ -66,6 +77,7 @@
   <script src="assets/codemirror-searchcursor.min.js"></script>
   <script src="assets/codemirror-vim.min.js"></script>
   <script src="assets/codemirror-emacs.min.js"></script>
+  <script src="output-modes.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

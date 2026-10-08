@@ -4,29 +4,48 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "slate-c"
 path = "src/main.rs"
 required-features = ["native"]
 
+[[bin]]
+name = "slate-c-browser"
+path = "src/browser.rs"
+required-features = ["browser"]
+
 [dependencies]
 anyhow = "1"
-clif2wasm = { path = "vendor/clif2wasm" }
-cranelift-codegen = { version = "=0.130.0", default-features = false, features = ["std"] }
-cranelift-frontend = "=0.130.0"
-cranelift-jit = { version = "=0.130.0", optional = true }
-cranelift-module = { version = "=0.130.0", optional = true }
-cranelift-native = { version = "=0.130.0", optional = true }
-cranelift-object = { version = "=0.130.0", optional = true }
-slate-parser = "0.1.0"
-wasm-bindgen = { version = "0.2", optional = true }
+cranelift-codegen = { version = "0.136.2", default-features = false, features = [
+  "std",
+] }
+cranelift-frontend = "0.136.2"
+cranelift-jit = { version = "0.136.2", optional = true }
+cranelift-module = { version = "0.136.2", optional = true }
+cranelift-native = { version = "0.136.2", optional = true }
+cranelift-object = { version = "0.136.2", optional = true }
+slate-parser = { version = "0.3" }
+target-lexicon = "0.13"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [features]
 default = ["native"]
-native = ["dep:cranelift-native", "dep:cranelift-object", "dep:cranelift-jit", "dep:cranelift-module", "cranelift-codegen/host-arch"]
-web = ["dep:wasm-bindgen"]
-
-[patch.crates-io]
-slate-parser = { path = "vendor/slate-parser" }
+native = [
+  "dep:cranelift-native",
+  "dep:cranelift-object",
+  "dep:cranelift-jit",
+  "dep:cranelift-module",
+  "cranelift-codegen/host-arch",
+]
+web = ["browser"]
+browser = [
+  "dep:serde",
+  "dep:serde_json",
+  "dep:cranelift-module",
+  "dep:cranelift-object",
+  "cranelift-codegen/x86",
+  "cranelift-codegen/arm64",
+]

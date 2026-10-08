@@ -31,7 +31,17 @@ h2 { font-size: 18px; color: #d9e8ff; margin: 0; }
 .execution-label { color: #9bb4d1; }
 #execution { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 #execution.ok { color: #4ade80; }
-#wasm-size { margin-left: auto; color: #9bb4d1; font-size: 13px; }
+#code-size { margin-left: auto; color: #9bb4d1; font-size: 13px; }
+.flag-row { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: center; }
+input { background: #192b52; color: #eaf2ff; border: 1px solid #365a91; border-radius: 6px; padding: 8px 12px; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.settings { padding: 12px; border: 1px solid #365a91; border-radius: 6px; }
+.settings summary { cursor: pointer; }
+#flag-filter { margin: 12px 0; width: 100%; }
+#flag-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; max-height: 320px; overflow: auto; }
+#flag-settings label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 12px ui-monospace, monospace; }
+#flag-settings input[type="number"] { width: 100px; }
+#flag-settings select { max-width: 150px; font-size: 12px; padding: 4px; }
+a { color: #93c5fd; }
 .scope { font-size: 13px; margin-top: 16px; }
 @media (max-width: 800px) {
   main { padding: 18px; }
@@ -39,4 +49,5 @@ h2 { font-size: 18px; color: #d9e8ff; margin: 0; }
   .grid { grid-template-columns: 1fr; }
   .editor-shell { height: 300px; }
   .row > select { flex: 1 1 auto; }
+  .flag-row, #flag-settings { grid-template-columns: 1fr; }
 }

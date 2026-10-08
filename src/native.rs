@@ -18,7 +18,7 @@ fn isa() -> Result<OwnedTargetIsa> {
 
 fn define(source: &str, module: &mut impl Module) -> Result<cranelift_module::FuncId> {
     let slate = crate::parse(source, &module.isa().triple().to_string())?;
-    let function = crate::lower(&slate, module.isa().default_call_conv())?;
+    let function = crate::lower(&slate, module.isa().frontend_config())?;
     let id = module.declare_function("main", Linkage::Export, &function.signature)?;
     let mut context = module.make_context();
     context.func = function;

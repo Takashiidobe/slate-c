@@ -7,16 +7,12 @@ fn main() -> Result<()> {
             let source = std::fs::read_to_string(input)?;
             println!("{}", slate_c::native::run(&source)?);
         }
-        [command, input, output] if command == "wasm" || command == "object" => {
+        [command, input, output] if command == "object" => {
             let source = std::fs::read_to_string(input)?;
-            let bytes = if command == "wasm" {
-                slate_c::compile_wasm(&source)?
-            } else {
-                slate_c::native::compile_object(&source)?
-            };
+            let bytes = slate_c::native::compile_object(&source)?;
             std::fs::write(output, bytes)?;
         }
-        _ => bail!("usage: slate-c run INPUT.c | slate-c {{wasm|object}} INPUT.c OUTPUT"),
+        _ => bail!("usage: slate-c run INPUT.c | slate-c object INPUT.c OUTPUT.o"),
     }
     Ok(())
 }

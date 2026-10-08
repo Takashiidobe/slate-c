@@ -1,3 +1,4 @@
 /target
 /www/dist
-vendor/**/target
+/build
+__pycache__/
