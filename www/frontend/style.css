@@ -1,0 +1,42 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #101b35; color: #eaf2ff; font: 15px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { max-width: 1400px; margin: auto; padding: 32px; }
+h1 { margin: 0; font-size: 28px; }
+p { color: #9bb4d1; }
+.intro { margin: 8px 0; }
+.toolbar { display: grid; gap: 10px; margin: 24px 0 16px; }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+select, button { font: inherit; border-radius: 6px; padding: 8px 12px; }
+select { background: #192b52; color: #eaf2ff; border: 1px solid #365a91; }
+button { background: #3b82f6; color: #eff6ff; border: 1px solid transparent; font-weight: 700; cursor: pointer; }
+button:hover:enabled { background: #2563eb; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, select:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
+.secondary, .copy-button { background: #192b52; border-color: #365a91; }
+.target { color: #9bb4d1; font-size: 14px; }
+#status { min-height: 24px; color: #9bb4d1; }
+#status.ok { color: #4ade80; }
+#status.error { color: #f87171; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+section { min-width: 0; }
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+h2 { font-size: 18px; color: #d9e8ff; margin: 0; }
+.copy-button { padding: 4px 10px; font-size: 13px; font-weight: 500; }
+.editor-shell { position: relative; width: 100%; height: 460px; min-height: 240px; resize: vertical; overflow: hidden; }
+.CodeMirror { height: 100%; border: 1px solid #374151; border-radius: 8px; font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.CodeMirror-scroll { overflow: auto; }
+.stale .CodeMirror { opacity: .45; }
+#diagnostics { position: absolute; left: 1px; right: 1px; bottom: 1px; z-index: 5; max-height: 60%; overflow: auto; margin: 0; padding: 12px; background: #2a1215; color: #fecaca; border-top: 1px solid #7f1d1d; border-radius: 0 0 8px 8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+.execution { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; margin-top: 16px; padding: 12px 16px; border: 1px solid #365a91; border-radius: 8px; background: #192b52; }
+.execution-label { color: #9bb4d1; }
+#execution { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#execution.ok { color: #4ade80; }
+#wasm-size { margin-left: auto; color: #9bb4d1; font-size: 13px; }
+.scope { font-size: 13px; margin-top: 16px; }
+@media (max-width: 800px) {
+  main { padding: 18px; }
+  h1 { font-size: 24px; }
+  .grid { grid-template-columns: 1fr; }
+  .editor-shell { height: 300px; }
+  .row > select { flex: 1 1 auto; }
+}

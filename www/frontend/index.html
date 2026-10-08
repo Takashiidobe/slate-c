@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slate C: Compile C to wasm</title>
+  <link rel="stylesheet" href="assets/codemirror.min.css">
+  <link rel="stylesheet" href="assets/codemirror-dialog.min.css">
+  <link rel="stylesheet" href="assets/codemirror-material-darker.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Slate C: Compile C to wasm</h1>
+    <div class="toolbar">
+      <div class="row">
+        <select id="examples" aria-label="Example">
+          <option value="42">Return 42</option>
+          <option value="17">Return 17</option>
+        </select>
+        <select id="keymap" aria-label="Editor key bindings">
+          <option value="default">Standard</option>
+          <option value="vim">Vim</option>
+          <option value="emacs">Emacs</option>
+        </select>
+        <span class="target">Target: WebAssembly</span>
+      </div>
+      <div class="row">
+        <button id="compile" type="button" disabled>Compile and run</button>
+        <button id="download" type="button" class="secondary" disabled>Download Wasm</button>
+        <span id="status" role="status">Loading compiler…</span>
+      </div>
+    </div>
+    <div class="grid">
+      <section aria-labelledby="c-heading">
+        <div class="section-header">
+          <h2 id="c-heading">C</h2>
+          <button id="copy-c" type="button" class="copy-button" aria-label="Copy C program" title="Copy C program">Copy</button>
+        </div>
+        <div class="editor-shell"><textarea id="c" aria-label="C source" spellcheck="false">int main(void) {
+    return 42;
+}</textarea></div>
+      </section>
+      <section aria-labelledby="clif-heading">
+        <div class="section-header">
+          <h2 id="clif-heading">Cranelift IR</h2>
+          <button id="copy-clif" type="button" class="copy-button" aria-label="Copy Cranelift IR" title="Copy Cranelift IR" disabled>Copy</button>
+        </div>
+        <div id="output-shell" class="editor-shell">
+          <textarea id="clif" aria-label="Cranelift IR" spellcheck="false"></textarea>
+          <pre id="diagnostics" role="alert" hidden></pre>
+        </div>
+      </section>
+    </div>
+    <div class="execution" aria-live="polite">
+      <span class="execution-label">Execution</span>
+      <span id="execution">Waiting for compilation</span>
+      <span id="wasm-size"></span>
+    </div>
+    <p class="scope">We currently support <code>int main(void)</code> returning a signed 32-bit integer constant.</p>
+    <noscript>This compiler requires JavaScript and WebAssembly.</noscript>
+  </main>
+  <script src="assets/codemirror.min.js"></script>
+  <script src="assets/codemirror-clike.min.js"></script>
+  <script src="assets/codemirror-dialog.min.js"></script>
+  <script src="assets/codemirror-searchcursor.min.js"></script>
+  <script src="assets/codemirror-vim.min.js"></script>
+  <script src="assets/codemirror-emacs.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
