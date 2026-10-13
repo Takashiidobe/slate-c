@@ -157,3 +157,10 @@ and settings-panel visibility. Shared values override local storage; all UI
 settings persist locally. Previous space-separated saved flags are migrated.
 Quoted commas are supported in flag values. Flag parsing, legacy migration,
 settings URL round-trip checks, JavaScript syntax, and the browser build pass.
+
+## README rewrite
+
+Rewrote the root README with the direct-docs skill around running the compiler,
+inspecting output, configuring flags, sharing, and resolving common errors.
+Build/hosting details remain linked from the browser README. Checked commands
+and UI labels against the current source and wrapped prose with Prettier.

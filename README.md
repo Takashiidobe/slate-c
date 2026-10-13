@@ -1,50 +1,72 @@
-# slate-c
+# Slate C Compiler
 
-Compile C through Slate's typed IR and Cranelift. The browser emits x86-64 or
-AArch64 machine code, shows CLIF and assembly, and calls `main` directly under
-bare-metal QEMU. Compilation and execution stay in the browser.
+Compile C to x86_64 or aarch64 machine code with Slate and Cranelift. Inspect
+CLIF, assembly, and binary output, then run your program in the browser.
 
-## Browser
+## Run in the browser
+
+Follow the [browser setup instructions](www/README.md) to prepare the headers
+and emulator dependencies, then build and serve the compiler:
 
 ```sh
+rustup target add wasm32-wasip1
 ./www/build.sh
 python3 www/serve.py
 ```
 
-Open <http://127.0.0.1:8000>. Choose a target and example, then use **Compile and
-run** or Ctrl/Cmd+Enter. Source and flag edits refresh compiler output. Headers
-and the selected emulator load lazily and are cached during the session.
+Open <http://127.0.0.1:8000>, choose a target, and click **Compile and run** or
+press Ctrl/Cmd+Enter. Start with:
 
-C compiler flags configure Slate's dialect and preprocessor. Cranelift flags
-configure optimization and the target backend; expand **Cranelift settings**
-for the available controls. Use `opt_level=speed` instead of C `-O` flags.
+```c
+int main(void) {
+    return 42;
+}
+```
 
-The page reports `main`'s signed integer return value, faults, or timeouts.
-**Stop** cancels execution. Download the compiled ELF object to link elsewhere.
-Execution does not provide an OS or libc; unresolved external symbols such as
-`puts` or `malloc` are rejected. Header declarations do not supply libraries.
+Compilation and execution happen locally in your browser. The execution panel
+shows `main`'s return value. Click **Stop** to cancel a run.
 
-The build needs Rust's `wasm32-wasip1` target, Python, and sibling checkouts of
-`../slate` and `../clif-explorer` with the explorer's QEMU and Capstone builds
-already present. Those JS/Wasm artifacts are copied directly without rebuilding.
-See [www/README.md](www/README.md) for header paths and hosting.
+## Inspect output
 
-## Supported C
+Choose **Cranelift IR**, **Assembly**, **Machine code (hex)**, or **ELF object
+(hex)**. For x86_64 assembly, choose Intel or AT&T syntax. Assembly disassembles
+machine code before relocation, so symbol addresses can be placeholders.
 
-Execution requires `int main(void)`. The browser backend supports scalar
-functions, locals, scalar globals, integer/f32/f64 arithmetic, conditionals,
-structured loops, pointers, and strings. Examples cover helpers and globals,
-loops, string data, and floating-point calls.
+Click **Download object** to save the compiled ELF object.
 
-Unsupported features produce errors. Variadic calls/definitions, aggregate
-function ABI passes, extended floats, atomic/volatile access, inline assembly,
-switch/goto, TLS, static locals, and some initializer forms are not supported.
-The guest image is limited to 4 MiB and execution to five seconds. This is an
-initial C backend, not a complete C compiler.
+## Configure and share
 
-## Native
+Enter flags separated by commas. Quote values that contain commas.
 
-The native JIT and object commands retain the initial constant-return subset:
+- **C compiler flags** configure the dialect and preprocessor. Default:
+  `-std=c17, -ffreestanding`.
+- **Cranelift flags** configure optimization and code generation. Default:
+  `opt_level=speed`. Expand **Cranelift settings** to browse the controls.
+
+Use Cranelift optimization settings instead of C `-O` flags.
+
+Your source and settings are saved in local storage. Click **Share** to update
+and copy the current URL with your source and settings. Opening a shared link
+uses its settings in preference to locally saved values.
+
+## Resolve compilation and execution errors
+
+Browser execution requires `int main(void)`. You can use scalar functions,
+locals, globals, arithmetic, conditionals, loops, pointers, and strings. Other
+constructs may produce unsupported-feature errors.
+
+Execution provides no operating system or libc. Calls such as `printf` and
+`malloc` fail with unresolved-symbol errors; including a header only supplies
+declarations. Runs stop after five seconds, and the guest image must fit within
+4 MiB.
+
+If emulation reports missing cross-origin isolation, serve the site with
+`www/serve.py`. See [browser hosting](www/README.md#hosting) for the required
+headers and browser capabilities.
+
+## Run natively
+
+The native commands currently support constant-return programs:
 
 ```sh
 cargo run --bin slate-c -- run tests/fixtures/return42.c
@@ -52,16 +74,4 @@ cargo run --bin slate-c -- object tests/fixtures/return42.c target/return42.o
 cc target/return42.o -o target/return42
 ```
 
-The JIT prints `42`; the linked executable exits with status `42`. Native flag
-controls and the broader lowering can be added later.
-
-## Development
-
-```sh
-cargo test --all-features
-cargo clippy --all-features --all-targets -- -D warnings
-```
-
-The implementation plan and progress are in [HANDOFF.md](HANDOFF.md).
-Dependencies no longer include clif2wasm or Waffle. Wasm hosts the compiler and
-emulator; generated programs are native ELF objects.
+The first command prints `42`. The linked executable exits with status `42`.
