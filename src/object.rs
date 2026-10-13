@@ -23,7 +23,6 @@ pub struct FunctionOutput {
 pub struct Output {
     pub clif: String,
     pub functions: Vec<FunctionOutput>,
-    pub entry: String,
 }
 
 pub fn lower(slate: &c::Module, module: &mut ObjectModule) -> Result<Output> {
@@ -101,7 +100,6 @@ pub fn lower(slate: &c::Module, module: &mut ObjectModule) -> Result<Output> {
     let mut output = Output {
         clif: String::new(),
         functions: Vec::new(),
-        entry: String::new(),
     };
     for function in &slate.functions {
         let function = &function.value;
@@ -192,48 +190,8 @@ pub fn lower(slate: &c::Module, module: &mut ObjectModule) -> Result<Output> {
                     ..
                 }))
             ),
-        "bare-metal execution requires int main(void)"
+        "execution requires int main(void)"
     );
-    let main_id = *functions
-        .get(&main.value.id)
-        .context("main cannot be inline-only")?;
-    let mut entry_name = "__slate_run".to_owned();
-    while slate
-        .functions
-        .iter()
-        .any(|function| function.value.name == entry_name)
-    {
-        entry_name.push('_');
-    }
-    let mut signature = module.make_signature();
-    signature
-        .params
-        .extend([AbiParam::new(types::I64), AbiParam::new(types::I64)]);
-    signature.returns.push(AbiParam::new(types::I64));
-    let entry_id = module.declare_function(&entry_name, Linkage::Export, &signature)?;
-    let mut context = module.make_context();
-    context.func.signature = signature;
-    context.func.name = clif::UserFuncName::user(0, entry_id.as_u32());
-    let mut builder_context = FunctionBuilderContext::new();
-    let config = module.isa().frontend_config();
-    {
-        let main = module.declare_func_in_func(main_id, &mut context.func);
-        let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        let block = builder.create_block();
-        builder.append_block_params_for_function_params(block);
-        builder.switch_to_block(block);
-        builder.seal_block(block);
-        let result_pointer = builder.block_params(block)[1];
-        let call = builder.ins().call(main, &[]);
-        let result = builder.inst_results(call)[0];
-        builder
-            .ins()
-            .store(MemFlagsData::new(), result, result_pointer, 64);
-        builder.ins().return_(&[result_pointer]);
-        builder.finalize(config);
-    }
-    module.define_function(entry_id, &mut context)?;
-    output.entry = entry_name;
     Ok(output)
 }
 
@@ -839,17 +797,35 @@ impl Emitter<'_, '_> {
                     .iter()
                     .find(|f| f.value.id == *binding)
                     .context("missing called function")?;
-                let name = declaration
+                let mut name = declaration
                     .value
                     .symbol
                     .asm_name
                     .clone()
                     .unwrap_or_else(|| declaration.value.name.clone());
                 let variadic = matches!(original, Type::Function { variadic: true, .. });
-                ensure!(
-                    !variadic,
-                    "variadic calls require a runtime and are not supported in bare-metal execution"
-                );
+                if variadic {
+                    ensure!(
+                        matches!(
+                            name.as_str(),
+                            "printf"
+                                | "fprintf"
+                                | "sprintf"
+                                | "snprintf"
+                                | "scanf"
+                                | "fscanf"
+                                | "sscanf"
+                                | "dprintf"
+                                | "asprintf"
+                                | "open"
+                                | "openat"
+                                | "fcntl"
+                                | "ioctl"
+                        ),
+                        "variadic calls to {name} are not supported"
+                    );
+                    name = format!("__slate_vararg_{name}");
+                }
                 let mut signature = self.module.make_signature();
                 let mut values = Vec::new();
                 for argument in arguments {

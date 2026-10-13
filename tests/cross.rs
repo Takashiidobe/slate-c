@@ -15,7 +15,7 @@ fn request(target: &str) -> CompileRequest {
 fn emits_target_selected_elf_with_frontend_defines() {
     for (target, machine) in [
         ("x86_64-unknown-linux-gnu", 62),
-        ("aarch64-unknown-linux-gnu", 183),
+        ("x86_64-unknown-linux-musl", 62),
     ] {
         let output = compile(&request(target)).unwrap();
         assert_eq!(&output.object[..4], b"\x7fELF");
@@ -39,7 +39,7 @@ fn rejects_conflicting_and_unimplemented_flags() {
         input.c_flags.push(flag.into());
         assert!(compile(&input).is_err(), "accepted {flag}");
     }
-    let mut input = request("aarch64-unknown-linux-gnu");
+    let mut input = request("x86_64-unknown-linux-gnu");
     input.cranelift_flags.push("not_a_setting=true".into());
     assert!(compile(&input).is_err());
     input = request("wasm32-unknown-unknown");

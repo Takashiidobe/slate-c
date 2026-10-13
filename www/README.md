@@ -1,6 +1,6 @@
 # Browser compiler
 
-Build the compiler as a WASI command and serve the site with isolation headers:
+Build and serve the x86_64 compiler with Blink, musl, and a browser-side linker:
 
 ```sh
 rustup target add wasm32-wasip1
@@ -8,47 +8,56 @@ rustup target add wasm32-wasip1
 python3 www/serve.py
 ```
 
-Generated assets live in `dist/` and are ignored by Git. `CLIF_EXPLORER`
-overrides the sibling explorer checkout path. `SLATE_HEADERS` overrides Slate's
-data directory containing `compiler-headers/` and `sysroots/`. Install Slate's
-Clang builtin headers and x86-64/AArch64 GNU Linux sysroots before building.
+Open <http://127.0.0.1:8000>. Compile and run links your object with musl, runs
+it in a fresh worker, and displays output and the process exit status.
 
-The build copies existing QEMU/Capstone JS/Wasm and packages target header
-sources. It does not rebuild emulators or ship Linux kernels, libc, or a linker.
-Header archives load lazily and are mounted through Slate's browser WASI shim.
-The C layout profiles are GNU/Linux SysV and AAPCS64 with `-ffreestanding`;
-execution is bare-metal and supplies no Linux services.
+## Prepare dependencies
 
-The browser ELF loader lays out code, data, and BSS and applies relocations.
-An entry adapter calls `main` and returns its result through the explorer's
-startup stub. Referenced undefined symbols are rejected before downloading
-or starting QEMU. Capstone disassembles pre-relocation function bytes, so symbol
-addresses in that view are placeholders. Select Intel or AT&T syntax for
-x86-64 without recompiling. Machine code shows each function’s bytes; ELF object
-shows the complete downloadable object as hexadecimal.
+Install Rust, Python, Git, GNU Make, curl, Emscripten (`emcc` and `emar`),
+Clang, and `llvm-ar`. Keep sibling checkouts of `../slate` for its browser WASI
+shim and `../clif-explorer` with Capstone already built. QEMU is not required.
 
-## Hosting
+Install Slate's Clang builtin headers before building. `SLATE_HEADERS` selects
+the directory containing `compiler-headers/`; its default is
+`~/.local/share/slate`. `CLIF_EXPLORER` selects the explorer checkout; its
+default is `../clif-explorer`.
 
-Serve every response with:
+The first build downloads pinned Blink sources and Alpine linker/musl packages,
+then builds Blink with Emscripten. Later builds reuse the Blink runtime when its
+source revision and compiler settings match. Generated assets are in `www/dist`;
+cached sources and packages are in `build`.
 
-```text
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
+The build packages matching musl headers and libraries together. Target headers,
+Blink, and linker assets load lazily. No kernel or operating system boots.
 
-`serve.py` and `dist/_headers` provide these headers. Plain
-`python3 -m http.server` does not. The emulator requires WebAssembly Memory64
-and shared memory; use a current Chromium or Firefox. The first run downloads
-the selected emulator, which is tens of megabytes. Enable HTTP compression.
+## Use the compiler
 
-The UI preserves source and all settings in local storage. Flags are
-comma-separated; quote values containing commas. **Share** updates the current
-URL and copies a link containing the source and settings. Shared URL settings
-take precedence over local storage. Source or flag
-changes invalidate previous results and downloads. **Stop** cancels loading or
-execution. A five-second execution timeout terminates the guest worker. Every
-run starts with fresh guest memory.
+Select an example or enter a program with `int main(void)`. Press Ctrl/Cmd+Enter
+or click **Compile and run**. **Stop** cancels linking or execution. Linking has
+a 30-second limit; execution has a five-second limit. Output is limited to 1 MiB
+per stream, and each run starts with a fresh virtual filesystem.
 
-QEMU and Capstone licenses and source references are in `dist/licenses`.
-The copied startup stubs and worker sources come from `../clif-explorer/web`;
-its stub build instructions are in `../clif-explorer/web/stubs`.
+Inspect CLIF, Intel/AT&T assembly, machine-code hex, or ELF object hex. Assembly
+shows code before relocation, so symbol addresses can be placeholders. Download
+object saves the relocatable object, which you can link elsewhere.
+
+Separate flags with commas and quote values containing commas. Source and all
+settings persist locally. **Share** updates the current URL and copies a link
+containing your source and settings; shared values override local storage.
+
+Musl provides formatted output, allocation, strings, and file I/O. Supported
+variadic calls include the printf/scanf families, `dprintf`, `asprintf`, `open`,
+`openat`, `fcntl`, and `ioctl`. Other compiler and syscall limitations still
+apply. Threads, process creation, sockets, and interactive input are
+unavailable.
+
+## Host the site
+
+Serve `www/dist` with a static HTTP server. `www/serve.py` and `dist/_headers`
+include isolation headers, but Blink does not require the Memory64 or shared
+memory features needed by the former QEMU build. Enable HTTP compression for the
+compiler and runtime assets.
+
+Blink and Capstone licenses and runtime package/source references ship in
+`dist/licenses`. See [runtime packaging](runtime/README.md) for the linker and
+[standalone Blink demo](blink/README.md) to run existing static executables.

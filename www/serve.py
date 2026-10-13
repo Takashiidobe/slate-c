@@ -14,7 +14,8 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8000)
+    parser.add_argument('--directory', type=Path, default=Path(__file__).resolve().parent / 'dist')
     args = parser.parse_args()
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), partial(Handler, directory=str(Path(__file__).resolve().parent / 'dist')))
+    server = ThreadingHTTPServer(('127.0.0.1', args.port), partial(Handler, directory=str(args.directory.resolve())))
     print(f'Open http://127.0.0.1:{args.port}')
     server.serve_forever()

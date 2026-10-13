@@ -1,7 +1,7 @@
 # Slate C Compiler
 
-Compile C to x86_64 or aarch64 machine code with Slate and Cranelift. Inspect
-CLIF, assembly, and binary output, then run your program in the browser.
+Compile C to x86_64 machine code with Slate and Cranelift. Inspect CLIF,
+assembly, and binary output, then run your program in the browser.
 
 ## Run in the browser
 
@@ -24,7 +24,8 @@ int main(void) {
 ```
 
 Compilation and execution happen locally in your browser. The execution panel
-shows `main`'s return value. Click **Stop** to cancel a run.
+shows the process exit status and program output. Click **Stop** to cancel a
+run.
 
 ## Inspect output
 
@@ -55,14 +56,14 @@ Browser execution requires `int main(void)`. You can use scalar functions,
 locals, globals, arithmetic, conditionals, loops, pointers, and strings. Other
 constructs may produce unsupported-feature errors.
 
-Execution provides no operating system or libc. Calls such as `printf` and
-`malloc` fail with unresolved-symbol errors; including a header only supplies
-declarations. Runs stop after five seconds, and the guest image must fit within
-4 MiB.
+Programs link with musl and run under Blink without booting Linux. You can use
+formatted output, allocation, strings, and file I/O within its supported syscall
+interface. Threads, process creation, sockets, and interactive input are
+unavailable.
 
-If emulation reports missing cross-origin isolation, serve the site with
-`www/serve.py`. See [browser hosting](www/README.md#hosting) for the required
-headers and browser capabilities.
+Runs stop after five seconds. Undefined symbols produce linker errors; other
+unsupported language features produce compiler errors. See the
+[browser instructions](www/README.md) for build requirements and runtime limits.
 
 ## Run natively
 

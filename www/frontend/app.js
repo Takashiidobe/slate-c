@@ -14,6 +14,9 @@ const copyOutput = document.querySelector('#copy-clif');
 const status = document.querySelector('#status');
 const diagnostics = document.querySelector('#diagnostics');
 const execution = document.querySelector('#execution');
+const programOutput = document.querySelector('#program-output');
+const stdout = document.querySelector('#stdout');
+const stderr = document.querySelector('#stderr');
 const shell = document.querySelector('#output-shell');
 const view = document.querySelector('#output-view');
 const syntax = document.querySelector('#asm-syntax');
@@ -95,7 +98,7 @@ function restore(saved) {
   for (const [name, control] of Object.entries(settingControls)) {
     let value = saved[name];
     if (typeof value !== 'string') continue;
-    if (name === 'target') value = value.replace('linux-musl', 'linux-gnu');
+    if (name === 'target') value = value.startsWith('x86_64-') ? 'x86_64-unknown-linux-musl' : value;
     if (saved.version !== 2 && (name === 'cFlags' || name === 'clifFlags')) {
       value = flags(value, true).map(flag => JSON.stringify(flag)).join(', ');
     }
@@ -113,6 +116,9 @@ function invalidate() {
   diagnostics.hidden = true;
   execution.textContent = 'Waiting';
   execution.className = '';
+  programOutput.hidden = true;
+  stdout.textContent = '';
+  stderr.textContent = '';
   save();
 }
 
@@ -165,7 +171,10 @@ async function run() {
     const result = await rpc('run', request());
     if (snapshot !== revision) return;
     if (result.status !== 'ok') throw new Error(result.error);
-    execution.textContent = `main returned ${result.value}`;
+    execution.textContent = `Exited with status ${result.exitCode}`;
+    stdout.textContent = result.stdout;
+    stderr.textContent = result.stderr;
+    programOutput.hidden = false;
     execution.className = 'ok';
     setStatus(`Ran in ${Math.round(result.ms)} ms.`, 'ok');
   } catch (error) {
@@ -251,6 +260,9 @@ function startWorker() {
 }
 
 const examples = {
+  libc: '#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n    int *value = malloc(sizeof(int));\n    if (!value) return 1;\n    *value = 42;\n    printf("The answer is %d\\n", *value);\n    free(value);\n    return 0;\n}',
+  files: '#include <stdio.h>\n\nint main(void) {\n    FILE *file = fopen("/tmp/example.txt", "w+");\n    if (!file) return 1;\n    fputs("Hello from a virtual file", file);\n    rewind(file);\n    char text[64];\n    if (!fgets(text, sizeof(text), file)) return 2;\n    puts(text);\n    fclose(file);\n    return 0;\n}',
+
   return42: 'int main(void) {\n    return 42;\n}',
   arithmetic: 'int bias = 5;\n\nint twice(int x) {\n    return x * 2;\n}\n\nint main(void) {\n    return twice(bias) + 32;\n}',
   loop: 'int main(void) {\n    int sum = 0;\n    for (int i = 0; i < 7; i++) {\n        sum += i * 2;\n    }\n    return sum;\n}',
@@ -309,5 +321,4 @@ function saveBytes(bytes, filename) {
 }
 downloadObject.addEventListener('click', () => saveBytes(compilation?.object, 'main.o'));
 for (const editor of [source, output]) new ResizeObserver(() => editor.refresh()).observe(editor.getWrapperElement().parentElement);
-if (!crossOriginIsolated) fail(new Error('Emulation requires cross-origin isolation. Serve this build with python3 www/serve.py.'));
-else startWorker();
+startWorker();

@@ -2,3 +2,6 @@
 /www/dist
 /build
 __pycache__/
+
+# Local Netlify folder
+.netlify

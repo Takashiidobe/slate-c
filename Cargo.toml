@@ -2,6 +2,7 @@
 name = "slate-c"
 version = "0.1.0"
 edition = "2024"
+default-run = "slate-c"
 
 [lib]
 crate-type = ["rlib"]
@@ -47,5 +48,4 @@ browser = [
   "dep:cranelift-module",
   "dep:cranelift-object",
   "cranelift-codegen/x86",
-  "cranelift-codegen/arm64",
 ]

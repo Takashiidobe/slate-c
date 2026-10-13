@@ -20,6 +20,8 @@
           <option value="loop">Loop</option>
           <option value="strings">Strings and data</option>
           <option value="floats">Floating point</option>
+          <option value="libc">Libc output and allocation</option>
+          <option value="files">File I/O</option>
         </select>
         <select id="keymap" aria-label="Editor key bindings">
           <option value="default">Standard</option>
@@ -27,8 +29,7 @@
           <option value="emacs">Emacs</option>
         </select>
         <select id="target" aria-label="Target">
-          <option value="x86_64-unknown-linux-gnu">x86_64</option>
-          <option value="aarch64-unknown-linux-gnu">aarch64</option>
+          <option value="x86_64-unknown-linux-musl">x86_64</option>
         </select>
       </div>
       <label class="flag-row">C compiler flags <input id="c-flags" value="-std=c17, -ffreestanding" spellcheck="false" placeholder="-std=c17, -DVALUE=42"></label>
@@ -68,7 +69,17 @@
       <span class="execution-label">Execution</span>
       <span id="execution">Waiting</span>
     </div>
-    <p class="scope"><a href="licenses/EMULATOR-SOURCES.md">Emulator sources</a></p>
+    <div id="program-output" hidden>
+      <section aria-labelledby="stdout-heading">
+        <h2 id="stdout-heading">stdout</h2>
+        <pre id="stdout" class="stream-output" aria-label="Standard output"></pre>
+      </section>
+      <section aria-labelledby="stderr-heading">
+        <h2 id="stderr-heading">stderr</h2>
+        <pre id="stderr" class="stream-output" aria-label="Standard error"></pre>
+      </section>
+    </div>
+    <p class="scope"><a href="licenses/BLINK-LICENSE">Blink license</a></p>
     <noscript>This compiler requires JavaScript and WebAssembly.</noscript>
   </main>
   <script src="assets/codemirror.min.js"></script>

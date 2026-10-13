@@ -31,7 +31,6 @@ h2 { font-size: 18px; color: #d9e8ff; margin: 0; }
 .execution-label { color: #9bb4d1; }
 #execution { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 #execution.ok { color: #4ade80; }
-#code-size { margin-left: auto; color: #9bb4d1; font-size: 13px; }
 .flag-row { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: center; }
 input { background: #192b52; color: #eaf2ff; border: 1px solid #365a91; border-radius: 6px; padding: 8px 12px; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .settings { padding: 12px; border: 1px solid #365a91; border-radius: 6px; }
@@ -51,3 +50,7 @@ a { color: #93c5fd; }
   .row > select { flex: 1 1 auto; }
   .flag-row, #flag-settings { grid-template-columns: 1fr; }
 }
+
+.stream-output { min-height: 45px; padding: 12px 16px; border: 1px solid #365a91; border-radius: 8px; background: #192b52; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.5 ui-monospace, monospace; }
+
+#program-output { margin-top: 16px; }

@@ -27,7 +27,6 @@ pub struct Compilation {
     pub clif: String,
     pub object: Vec<u8>,
     pub functions: Vec<crate::object::FunctionOutput>,
-    pub entry: String,
 }
 
 #[derive(Serialize)]
@@ -82,10 +81,7 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
     ensure!(
         matches!(
             request.target.as_str(),
-            "x86_64-unknown-linux-gnu"
-                | "aarch64-unknown-linux-gnu"
-                | "x86_64-unknown-linux-musl"
-                | "aarch64-unknown-linux-musl"
+            "x86_64-unknown-linux-gnu" | "x86_64-unknown-linux-musl"
         ),
         "unsupported target {}",
         request.target
@@ -145,6 +141,5 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
         clif: output.clif,
         object: module.finish().emit()?,
         functions: output.functions,
-        entry: output.entry,
     })
 }

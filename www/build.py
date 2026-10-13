@@ -24,7 +24,10 @@ def emit(source, stem, extension):
 def main():
     subprocess.run(['cargo', 'build', '--release', '--target', 'wasm32-wasip1',
                     '--no-default-features', '--features', 'browser', '--bin', 'slate-c-browser'], cwd=ROOT, check=True)
-    qemu = EXPLORER / 'build/qemu-wasm/out'
+    subprocess.run(['python3', str(ROOT / 'www/blink/build.py'), '--runtime-only'], check=True)
+    subprocess.run(['python3', str(ROOT / 'www/runtime/build.py')], check=True)
+    blink = ROOT / 'build/blink-demo'
+    runtime = ROOT / 'build/blink-runtime'
     if OUT.exists():
         shutil.rmtree(OUT)
     shutil.copytree(ROOT / 'www/frontend', OUT)
@@ -37,22 +40,15 @@ def main():
     header_root = Path(os.environ.get('SLATE_HEADERS', Path.home() / '.local/share/slate'))
     packed_root = ROOT / 'build/headers'
     packed_root.mkdir(parents=True, exist_ok=True)
-    for arch in ['x86_64', 'aarch64']:
-        triple = f'{arch}-unknown-linux-gnu'
-        sysroot = header_root / 'sysroots' / triple
-        if not sysroot.exists():
-            raise RuntimeError(f'missing Slate sysroot {triple}; set SLATE_HEADERS')
-        packed_headers = packed_root / f'{arch}.tar.gz'
-        with tarfile.open(packed_headers, 'w:gz', format=tarfile.USTAR_FORMAT, dereference=True) as archive:
-            for name in ['usr/include', 'include', 'SDK/usr/include', f'usr/{arch}-linux-gnu/include', 'licenses']:
-                path = sysroot / name
-                if path.exists(): archive.add(path, arcname=name)
-        manifest['targets'][triple] = {
-            'arch': arch,
-            'headers': emit(packed_headers, f'headers/{arch}', 'tar.gz'),
-            'qemu': {'js': emit(qemu / f'qemu-system-{arch}.js', f'vendor/qemu-system-{arch}', 'js'),
-                     'wasm': emit(qemu / f'qemu-system-{arch}.wasm', f'vendor/qemu-system-{arch}', 'wasm')},
-        }
+    manifest['targets']['x86_64-unknown-linux-musl'] = {
+        'arch': 'x86_64',
+        'headers': emit(runtime / 'headers.tar.gz', 'headers/x86_64-musl', 'tar.gz'),
+    }
+    manifest['blink'] = {
+        'js': emit(blink / 'blink.mjs', 'vendor/blink', 'mjs'),
+        'wasm': emit(blink / 'blink.wasm', 'vendor/blink', 'wasm'),
+        'runtime': emit(runtime / 'runtime.tar.gz', 'runtime/musl-linker', 'tar.gz'),
+    }
     profiles = sorted((header_root / 'compiler-headers').glob('clang-*'))
     if not profiles:
         raise RuntimeError('missing Slate Clang builtin headers; set SLATE_HEADERS')
@@ -64,9 +60,11 @@ def main():
     (OUT / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     licenses = OUT / 'licenses'
     licenses.mkdir()
-    shutil.copyfile(qemu / 'QEMU-LICENSE', licenses / 'QEMU-LICENSE')
+    shutil.copyfile(blink / 'BLINK-LICENSE', licenses / 'BLINK-LICENSE')
+    shutil.copyfile(runtime / 'SOURCES.json', licenses / 'RUNTIME-SOURCES.json')
+    shutil.copytree(ROOT / 'www/runtime/licenses', licenses / 'runtime')
     shutil.copyfile(capstone / 'CAPSTONE-LICENSE', licenses / 'CAPSTONE-LICENSE')
-    shutil.copyfile(EXPLORER / 'UPDATING.md', licenses / 'EMULATOR-SOURCES.md')
+    shutil.copyfile(EXPLORER / 'UPDATING.md', licenses / 'CAPSTONE-SOURCES.md')
     print(f'Browser build ready: {OUT}')
 
 

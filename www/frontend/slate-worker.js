@@ -1,11 +1,10 @@
 import { ConsoleStdout, Directory, File, OpenFile, PreopenDirectory, WASI } from './vendor/browser_wasi_shim/index.js';
 import { createDisassembler } from './disasm.mjs';
-import { runProgram } from './run.mjs';
+import { runProgram } from './blink.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const cache = new Map();
-const modules = new Map();
 let compiled;
 let manifest;
 let compiler;
@@ -126,18 +125,29 @@ async function run(request, id) {
   if (compiled?.key !== key(request)) await compile(request, id);
   running = new AbortController();
   try {
-    const target = manifest.targets[request.target];
     const started = performance.now();
-    const load = async () => {
-      status(id, 'Loading emulator…');
-      if (!modules.has(target.arch)) modules.set(target.arch, bytes(target.qemu.wasm).then(data => WebAssembly.compile(data)).catch(error => { modules.delete(target.arch); throw error; }));
-      const compiled = await modules.get(target.arch);
-      status(id, 'Running main…');
-      return { compiled, js: new URL(target.qemu.js, self.location).href,
-        wasm: new URL(target.qemu.wasm, self.location).href,
-        worker: new URL('./qemu-worker.mjs', self.location).href };
+    status(id, 'Loading Blink and linker…');
+    const signal = running.signal;
+    const load = Promise.all([bytes(manifest.blink.wasm), archive(manifest.blink.runtime)]);
+    const [wasm, runtime] = await new Promise((resolve, reject) => {
+      const cancel = () => reject(new Error('Execution cancelled.'));
+      signal.addEventListener('abort', cancel, { once: true });
+      load.then(resolve, reject).finally(() => signal.removeEventListener('abort', cancel));
+      if (signal.aborted) cancel();
+    });
+    if (running.signal.aborted) throw new Error('Execution cancelled.');
+    const files = [];
+    const flatten = (directory, prefix = '') => {
+      for (const [name, entry] of directory.contents) {
+        const path = `${prefix}/${name}`;
+        if (entry instanceof Directory) flatten(entry, path);
+        else files.push({ path, bytes: entry.data });
+      }
     };
-    const result = await runProgram(compiled.compilation, target.arch, load, running.signal);
+    flatten(runtime);
+    const result = await runProgram(compiled.compilation.object,
+      { wasm, js: new URL(manifest.blink.js, self.location).href, files },
+      running.signal, text => status(id, text));
     return { ...result, ms: performance.now() - started };
   } finally { running = null; }
 }
