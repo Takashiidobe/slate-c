@@ -6,9 +6,7 @@ use cranelift_codegen::{
 use cranelift_module::default_libcall_names;
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use serde::{Deserialize, Serialize};
-use slate_parser::{
-    compiler_args::CompilerArgParser, dialect::Dialect, parser::Parser, sema::Sema,
-};
+use slate_parser::{compiler_args::CompilerArgParser, dialect::Dialect, parser::Parser};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,7 +24,7 @@ pub struct Compilation {
     pub target: String,
     pub clif: String,
     pub object: Vec<u8>,
-    pub functions: Vec<crate::object::FunctionOutput>,
+    pub functions: Vec<crate::backend::FunctionOutput>,
 }
 
 #[derive(Serialize)]
@@ -107,13 +105,7 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
     let dialect = Dialect::new(args.flavor, args.standard, args.target, args.options);
     let mut parser =
         Parser::new(search, dialect).with_preprocessor_inputs(args.preprocessor_inputs);
-    let (unit, files) = parser
-        .parse_file_with_source(std::path::Path::new("input.c"), request.source.clone())
-        .map_err(|e| anyhow!("{e}"))?;
-    let mut sema = Sema::new(&unit);
-    sema.names().map_err(|e| anyhow!("{e}"))?;
-    sema.analyze(&files).map_err(crate::frontend_errors)?;
-    let (slate, _) = sema.lower(&files).map_err(crate::frontend_errors)?;
+    let slate = crate::frontend::parse_with(&mut parser, &request.source)?;
 
     let mut shared = settings::builder();
     let triple = request.target.parse().map_err(|e| anyhow!("{e}"))?;
@@ -135,7 +127,7 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
     let isa = backend.finish(settings::Flags::new(shared))?;
     let mut module =
         ObjectModule::new(ObjectBuilder::new(isa, "slate-c", default_libcall_names())?);
-    let output = crate::object::lower(&slate, &mut module)?;
+    let output = crate::backend::lower(&slate, &mut module)?;
     Ok(Compilation {
         target: request.target.clone(),
         clif: output.clif,

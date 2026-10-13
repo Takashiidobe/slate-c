@@ -45,3 +45,30 @@ fn rejects_conflicting_and_unimplemented_flags() {
     input = request("wasm32-unknown-unknown");
     assert!(compile(&input).is_err());
 }
+
+#[test]
+fn compiles_library_and_non_runner_main_signatures() {
+    for source in [
+        "int global = 7; int other(int x) { return global + x; }",
+        "int main(int argc, char **argv) { return argc; }",
+    ] {
+        let mut input = request("x86_64-unknown-linux-gnu");
+        input.source = source.into();
+        let output = compile(&input).unwrap();
+        assert_eq!(&output.object[..4], b"\x7fELF");
+        assert_eq!(output.functions.len(), 1);
+    }
+}
+
+#[test]
+fn compiles_calls_and_control_flow_through_the_shared_backend() {
+    let mut input = request("x86_64-unknown-linux-gnu");
+    input.source = "int add(int a, int b) { return a + b; }
+        int main(void) { int sum = 0;
+            for (int i = 0; i < 5; i++) sum = add(sum, i);
+            return sum; }"
+        .into();
+    let output = compile(&input).unwrap();
+    assert_eq!(output.functions.len(), 2);
+    assert!(output.clif.contains("call"));
+}
