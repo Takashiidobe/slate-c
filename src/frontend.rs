@@ -10,6 +10,7 @@ pub fn parse(source: &str, target: &str) -> Result<slate::Module> {
 
 pub(crate) struct Parsed {
     pub module: slate::Module,
+    pub ast_sexpr: String,
     #[cfg(any(feature = "native", feature = "browser"))]
     pub files: slate_parser::files::Files,
 }
@@ -31,8 +32,11 @@ pub(crate) fn parse_with(parser: &mut Parser, source: &str) -> Result<Parsed> {
     let (module, _) = sema.lower(&files).map_err(|error| {
         crate::diagnostics::CompilerError::from(error).with_sources(&files, source)
     })?;
+    let mut ast_sexpr = Vec::new();
+    slate_parser::render::SExprRenderer::new(&mut ast_sexpr).render(&unit)?;
     Ok(Parsed {
         module,
+        ast_sexpr: String::from_utf8_lossy(&ast_sexpr).into_owned(),
         #[cfg(any(feature = "native", feature = "browser"))]
         files,
     })

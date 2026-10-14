@@ -7,7 +7,7 @@ const typeNames = new Map([[0, 'NULL'], [1, 'PROGBITS'], [2, 'SYMTAB'], [3, 'STR
 const machineNames = new Map([[62, 'x86-64'], [183, 'AArch64']]);
 const elfTypes = new Map([[1, 'relocatable object'], [2, 'executable'], [3, 'shared object'], [4, 'core file']]);
 
-export function describeElf(bytes, showMeaning = false) {
+export function describeElf(bytes, showMeaning = false, disassemble) {
   if (bytes.length < 64 || bytes[0] !== 0x7f || bytes[1] !== 0x45 || bytes[2] !== 0x4c || bytes[3] !== 0x46) {
     return 'Not a complete ELF64 object.';
   }
@@ -80,6 +80,24 @@ export function describeElf(bytes, showMeaning = false) {
     field(offset + 44, 4, 'Info', String(section.info));
     field(offset + 48, 8, 'Alignment', String(section.alignment));
     field(offset + 56, 8, 'Entry size', `${section.entrySize} bytes`);
+    if (section.type === 1 && (section.flags & 4n) !== 0n && section.fileOffset + section.size <= BigInt(bytes.length)) {
+      const start = Number(section.fileOffset);
+      const code = bytes.subarray(start, start + Number(section.size));
+      lines.push(`  Contents · file offset ${numberHex(start)} · ${code.length} bytes`);
+      if (disassemble) {
+        const instructions = disassemble(code, Number(section.address));
+        const byteFields = instructions.map(instruction => Array.from(instruction.bytes, byte => byte.toString(16).padStart(2, '0')).join(' '));
+        const width = Math.max(23, ...byteFields.map(field => field.length));
+        for (const [index, instruction] of instructions.entries()) {
+          const instructionOffset = start + instruction.offset;
+          lines.push(`${numberHex(instructionOffset).padEnd(8)} ${byteFields[index].padEnd(width)} ${instruction.text}`);
+        }
+      } else {
+        for (let offset = 0; offset < code.length; offset += 16) {
+          lines.push(`${numberHex(start + offset).padEnd(8)} ${hex(code.subarray(offset, offset + 16)).replace(/(..)/g, '$1 ').trimEnd()}`);
+        }
+      }
+    }
   }
   return lines.join('\n');
 }

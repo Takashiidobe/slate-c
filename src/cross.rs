@@ -6,7 +6,9 @@ use cranelift_codegen::{
 use cranelift_module::default_libcall_names;
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use serde::{Deserialize, Serialize};
-use slate_parser::{compiler_args::CompilerArgParser, dialect::Dialect, parser::Parser};
+use slate_parser::{
+    ast::FileId, compiler_args::CompilerArgParser, dialect::Dialect, lexer::Lexer, parser::Parser,
+};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -22,6 +24,9 @@ pub struct CompileRequest {
 #[derive(Serialize)]
 pub struct Compilation {
     pub target: String,
+    pub ast: String,
+    pub slate_ir: String,
+    pub tokens: String,
     pub clif: String,
     pub object: Vec<u8>,
     pub functions: Vec<crate::backend::FunctionOutput>,
@@ -108,6 +113,36 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
     };
     let search = args.search_paths()?;
     let dialect = Dialect::new(args.flavor, args.standard, args.target, args.options);
+    let token_rows: Vec<_> = Lexer::new(FileId(0), &request.source, dialect.features())
+        .tokenize()
+        .iter()
+        .map(|token| {
+            (
+                format!("{:?}", token.value),
+                token
+                    .value
+                    .to_string()
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t"),
+            )
+        })
+        .collect();
+    let token_kind_width = token_rows
+        .iter()
+        .map(|(kind, _)| kind.len())
+        .max()
+        .unwrap_or(0)
+        .max("RUST TOKEN KIND".len());
+    let token_lines = token_rows
+        .iter()
+        .map(|(kind, spelling)| format!("{kind:<token_kind_width$}\t{spelling}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let tokens = format!(
+        "Raw lexer tokens (before preprocessing)\n{:<token_kind_width$}\tSPELLING\n{token_lines}",
+        "RUST TOKEN KIND"
+    );
     let mut parser =
         Parser::new(search, dialect).with_preprocessor_inputs(args.preprocessor_inputs);
     let parsed = crate::frontend::parse_with(&mut parser, &request.source)?;
@@ -136,6 +171,9 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
         .map_err(|error| error.with_sources(&parsed.files, &request.source))?;
     Ok(Compilation {
         target: request.target.clone(),
+        ast: parsed.ast_sexpr,
+        slate_ir: parsed.module.display(false).to_string(),
+        tokens,
         clif: output.clif,
         object: module.finish().emit()?,
         functions: output.functions,

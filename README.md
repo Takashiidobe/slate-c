@@ -1,7 +1,8 @@
 # Slate C Compiler
 
-Compile C to x86_64 machine code with Slate and Cranelift. Inspect CLIF,
-assembly, and binary output, then run your program in the browser.
+Compile C to x86_64 or AArch64 machine code with Slate and Cranelift. Inspect
+the compiler's intermediate forms and machine output, then run your program in
+the browser.
 
 ## Run in the browser
 
@@ -29,9 +30,11 @@ run.
 
 ## Inspect output
 
-Choose **Cranelift IR**, **Assembly**, **Machine code (hex)**, or **ELF object
-(hex)**. For x86_64 assembly, choose Intel or AT&T syntax. Assembly disassembles
-machine code before relocation, so symbol addresses can be placeholders.
+Choose the **Cranelift IR**, **Assembly**, **ELF**, **Slate AST**, **Slate IR**,
+or **Tokens** tab. In Assembly, **Show bytes** displays instruction encodings
+beside the disassembly. In ELF, **Show meaning** decodes header and section
+fields. Assembly shows code before relocation, so symbol addresses can be
+placeholders.
 
 Click **Download object** to save the compiled ELF object.
 
@@ -56,10 +59,10 @@ Browser execution requires `int main(void)`. You can use scalar functions,
 locals, globals, arithmetic, conditionals, loops, pointers, and strings. Other
 constructs may produce unsupported-feature errors.
 
-Programs link with musl and run under Blink without booting Linux. You can use
-formatted output, allocation, strings, and file I/O within its supported syscall
-interface. Threads, process creation, sockets, and interactive input are
-unavailable.
+Programs link statically with musl. x86_64 executes with Blink, and AArch64
+executes with nixvm without booting Linux. Formatted output, allocation,
+strings, and file I/O depend on the selected backend's supported syscalls.
+Threads, process creation, sockets, and interactive input are unavailable.
 
 Runs stop after five seconds. Undefined symbols produce linker errors; other
 unsupported language features produce compiler errors. See the

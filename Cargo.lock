@@ -1181,8 +1181,6 @@ dependencies = [
 [[package]]
 name = "slate-parser"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc963af43ba8332f5161d2653fc80a16df5b059ae78f0988ba11c3cad01398ec"
 dependencies = [
  "custom_debug",
  "directories",

@@ -32,6 +32,8 @@ def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     shutil.copytree(ROOT / 'www/frontend', OUT)
+    shutil.copyfile(SLATE / 'www-parser/frontend/assets/codemirror-slate-ir.js',
+                    OUT / 'assets/codemirror-slate-ir.js')
     shutil.copytree(SLATE / 'www/frontend/vendor/browser_wasi_shim', OUT / 'vendor/browser_wasi_shim')
     compiler = emit(ROOT / 'target/wasm32-wasip1/release/slate-c-browser.wasm', 'compiler', 'wasm')
     capstone = EXPLORER / 'build/capstone-wasm/out'

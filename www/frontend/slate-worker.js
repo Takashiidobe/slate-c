@@ -115,12 +115,16 @@ async function compile(request, id) {
           bytes: Array.from(line.bytes, byte => byte.toString(16).padStart(2, '0')).join(' '),
         }));
         const width = Math.max(0, ...instructions.map(line => line.bytes.length));
-        return `${fn.name}:\n${instructions.map(line => `${line.bytes.padEnd(width)} ${line.text}`).join('\n')}`;
+        return `${fn.name}:\n${instructions.map(line => `${line.bytes.padEnd(width)}  ${line.text}`).join('\n')}`;
       }).join('\n\n');
     } finally { disassembler.close(); }
   }
-  compilation.elf = describeElf(compilation.object);
-  compilation.elfMeaning = describeElf(compilation.object, true);
+  const elfDisassembler = createDisassembler(target.arch, module);
+  try {
+    const disassembleText = (code, address) => elfDisassembler.disassemble(code, [], address);
+    compilation.elf = describeElf(compilation.object, false, disassembleText);
+    compilation.elfMeaning = describeElf(compilation.object, true, disassembleText);
+  } finally { elfDisassembler.close(); }
   compiled = { key: key(request), compilation };
   return { ...compilation, ms };
 }

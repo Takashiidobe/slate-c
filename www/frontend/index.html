@@ -54,14 +54,22 @@
     return 42;
 }</textarea></div>
       </section>
-      <section aria-labelledby="clif-heading">
+      <section aria-labelledby="output-tabs">
         <div class="section-header">
-          <h2 id="clif-heading"><select id="output-view" aria-label="Compiler output"><option value="clif">Cranelift IR</option><option value="assembly">Assembly</option><option value="elf">ELF object</option></select></h2>
+          <div id="output-tabs" role="tablist" aria-label="Compiler output">
+            <button id="tokens-tab" type="button" role="tab" data-view="tokens" aria-selected="false" tabindex="-1">Tokens</button>
+            <button id="ast-tab" type="button" role="tab" data-view="ast" aria-selected="false" tabindex="-1">Slate AST</button>
+            <button id="slate_ir-tab" type="button" role="tab" data-view="slate_ir" aria-selected="false" tabindex="-1">Slate IR</button>
+            <button id="clif-tab" type="button" role="tab" data-view="clif" aria-selected="true">Cranelift IR</button>
+            <button id="assembly-tab" type="button" role="tab" data-view="assembly" aria-selected="false" tabindex="-1">Assembly</button>
+            <button id="elf-tab" type="button" role="tab" data-view="elf" aria-selected="false" tabindex="-1">ELF</button>
+          </div>
+          <select id="output-view" aria-label="Compiler output" hidden><option value="tokens">Tokens</option><option value="ast">Slate AST</option><option value="slate_ir">Slate IR</option><option value="clif" selected>Cranelift IR</option><option value="assembly">Assembly</option><option value="elf">ELF</option></select>
           <select id="asm-syntax" aria-label="x86 assembly syntax" hidden><option value="intel">Intel</option><option value="att">AT&amp;T</option></select>
           <label id="show-bytes-control" class="toggle-control" hidden><input id="show-bytes" type="checkbox"> Show bytes</label>
           <button id="copy-clif" type="button" class="copy-button" aria-label="Copy compiler output" title="Copy compiler output" disabled>Copy</button>
         </div>
-        <div id="output-shell" class="editor-shell">
+        <div id="output-shell" class="editor-shell" role="tabpanel" aria-labelledby="clif-tab">
           <textarea id="clif" aria-label="Compiler output" spellcheck="false"></textarea>
           <pre id="diagnostics" role="alert" hidden></pre>
         </div>
@@ -74,11 +82,11 @@
     <div id="program-output" hidden>
       <section aria-labelledby="stdout-heading">
         <h2 id="stdout-heading">stdout</h2>
-        <pre id="stdout" class="stream-output" aria-label="Standard output"></pre>
+        <pre id="stdout" class="stream-output"></pre>
       </section>
       <section aria-labelledby="stderr-heading">
         <h2 id="stderr-heading">stderr</h2>
-        <pre id="stderr" class="stream-output" aria-label="Standard error"></pre>
+        <pre id="stderr" class="stream-output"></pre>
       </section>
     </div>
     <p class="scope"><a href="licenses/BLINK-LICENSE">Blink license</a></p>
@@ -90,6 +98,7 @@
   <script src="assets/codemirror-searchcursor.min.js"></script>
   <script src="assets/codemirror-vim.min.js"></script>
   <script src="assets/codemirror-emacs.min.js"></script>
+  <script src="assets/codemirror-slate-ir.js"></script>
   <script src="output-modes.js"></script>
   <script type="module" src="app.js"></script>
 </body>

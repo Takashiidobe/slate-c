@@ -19,6 +19,7 @@ const stdout = document.querySelector('#stdout');
 const stderr = document.querySelector('#stderr');
 const shell = document.querySelector('#output-shell');
 const view = document.querySelector('#output-view');
+const outputTabs = [...document.querySelectorAll('#output-tabs [role="tab"]')];
 const syntax = document.querySelector('#asm-syntax');
 const showBytesControl = document.querySelector('#show-bytes-control');
 const showBytes = document.querySelector('#show-bytes');
@@ -127,6 +128,12 @@ function invalidate() {
 }
 
 function showOutput() {
+  for (const tab of outputTabs) {
+    const selected = tab.dataset.view === view.value;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  }
+  shell.setAttribute('aria-labelledby', `${view.value}-tab`);
   syntax.hidden = view.value !== 'assembly' || !target.value.startsWith('x86_64');
   showBytesControl.hidden = !['assembly', 'elf'].includes(view.value);
   showBytesControl.lastChild.textContent = view.value === 'elf' ? ' Show meaning' : ' Show bytes';
@@ -134,7 +141,9 @@ function showOutput() {
   const att = view.value === 'assembly' && !syntax.hidden && syntax.value === 'att';
   const field = view.value === 'assembly' ? `${att ? 'att' : ''}Assembly${showAssemblyBytes ? 'Bytes' : ''}`
     : view.value === 'elf' && showElfMeaning ? 'elfMeaning' : view.value;
-  output.setOption('mode', view.value === 'clif' ? 'slate-clif' : view.value === 'assembly' ? 'slate-assembly' : 'text/plain');
+  output.setOption('mode', view.value === 'clif' ? 'slate-clif' : view.value === 'assembly' ? 'slate-assembly'
+    : view.value === 'ast' ? 'slate-sexpr' : view.value === 'tokens' ? 'slate-tokens'
+      : view.value === 'slate_ir' ? 'slate-ir' : view.value === 'elf' ? 'slate-elf' : 'text/plain');
   output.setValue(compilation?.[field] ?? '');
   copyOutput.disabled = !compilation;
 }
@@ -294,7 +303,17 @@ source.on('change', changed);
 cFlags.addEventListener('input', changed);
 clifFlags.addEventListener('input', () => { changed(); renderSchema(); });
 target.addEventListener('change', () => { clifFlags.value = 'opt_level=speed'; showOutput(); changed(); if (ready) loadSchema(); });
-view.addEventListener('change', () => { showOutput(); save(); });
+for (const [index, tab] of outputTabs.entries()) {
+  tab.addEventListener('click', () => { view.value = tab.dataset.view; showOutput(); save(); });
+  tab.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? outputTabs.length - 1
+      : (index + (event.key === 'ArrowRight' ? 1 : outputTabs.length - 1)) % outputTabs.length;
+    outputTabs[next].click();
+    outputTabs[next].focus();
+  });
+}
 syntax.addEventListener('change', () => { showOutput(); save(); });
 showBytes.addEventListener('change', () => {
   if (view.value === 'elf') showElfMeaning = showBytes.checked;
