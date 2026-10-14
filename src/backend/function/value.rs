@@ -148,9 +148,21 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             ValueKind::CodeUnits(..) => Err(CompilerError::Unsupported(
                 "string values are not supported".into(),
             )),
-            ValueKind::Aggregate { .. } => Err(CompilerError::Unsupported(
-                "aggregate initializers are not supported".into(),
-            )),
+            ValueKind::Aggregate { .. } => {
+                let address = self.temporary(&value.ty)?;
+                self.initialize(address, &value.ty, value)?;
+                if self.module.aggregate(&value.ty)? {
+                    Ok(LoweredValue::Aggregate { address })
+                } else {
+                    let result = self.builder.ins().load(
+                        self.module.scalar(&value.ty)?,
+                        MemFlagsData::new(),
+                        address,
+                        0,
+                    );
+                    Ok(LoweredValue::Scalar(result))
+                }
+            }
             ValueKind::FunctionDecay { .. } => Err(CompilerError::Unsupported(
                 "function addresses are not supported".into(),
             )),

@@ -66,6 +66,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                 }
             }
             Statement::Let(variable) => {
+                if variable.initializer.is_some() && !variable.access.is_plain() {
+                    return Err(CompilerError::Unsupported(
+                        "atomic and volatile access is not supported".into(),
+                    ));
+                }
                 if variable.storage != c::StorageDuration::Automatic {
                     return Err(CompilerError::Unsupported(
                         "static local variables are not supported".to_string(),

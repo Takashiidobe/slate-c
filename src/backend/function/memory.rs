@@ -4,7 +4,7 @@ use cranelift_codegen::ir::{
     self as clif, InstBuilder, MemFlagsData, StackSlotData, StackSlotKind, types,
 };
 use cranelift_module::{DataDescription, Module};
-use slate_parser::ir::{self as c, BindingId, PlaceKind, Type};
+use slate_parser::ir::{self as c, BindingId, PlaceKind, Type, ValueKind};
 
 impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
     fn stack_slot(&mut self, ty: &Type, alignment: Option<u64>) -> Result<LocalSlot> {
@@ -211,7 +211,50 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         ty: &Type,
         initializer: &c::Value,
     ) -> Result<()> {
-        if matches!(self.module.resolved(ty)?, Type::Array { .. }) {
+        self.initialize_inner(pointer, ty, initializer)
+            .map_err(|error| error.at(initializer.node.expansion))
+    }
+
+    fn initialize_inner(
+        &mut self,
+        pointer: clif::Value,
+        ty: &Type,
+        initializer: &c::Value,
+    ) -> Result<()> {
+        if let ValueKind::Aggregate { members, zero_fill } = &initializer.node.value {
+            if matches!(self.module.resolved(ty)?, Type::Defined(_))
+                && matches!(
+                    self.module.record_definition(ty)?,
+                    c::TypeDefinitionKind::Record {
+                        kind: c::RecordKind::Union,
+                        ..
+                    }
+                )
+            {
+                return Err(CompilerError::Unsupported(
+                    "union initializers are not supported".into(),
+                ));
+            }
+            self.validate_initializer_access(ty)?;
+            if *zero_fill {
+                self.builder.emit_small_memset(
+                    self.module.backend.isa().frontend_config(),
+                    pointer,
+                    0,
+                    self.module.size_of(ty)?,
+                    1,
+                    MemFlagsData::new(),
+                );
+            }
+            for member in members {
+                let (offset, member_type) = self.initializer_member(ty, member.target)?;
+                let destination = self
+                    .builder
+                    .ins()
+                    .iadd_imm_s(pointer, i64::try_from(offset)?);
+                self.initialize(destination, &member_type, &member.value)?;
+            }
+        } else if matches!(self.module.resolved(ty)?, Type::Array { .. }) {
             let bytes = self
                 .module
                 .initial_bytes(initializer, self.module.size_of(ty)?)?;
@@ -226,5 +269,101 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             self.write_value(pointer, ty, value)?;
         }
         Ok(())
+    }
+
+    fn validate_initializer_access(&self, ty: &Type) -> Result<()> {
+        match self.module.resolved(ty)? {
+            Type::Array { element, .. } => self.validate_initializer_access(element),
+            Type::Defined(_) => {
+                let c::TypeDefinitionKind::Record {
+                    fields: Some(fields),
+                    ..
+                } = self.module.record_definition(ty)?
+                else {
+                    return Err(CompilerError::InvalidIr(
+                        "initializer requires a complete record".into(),
+                    ));
+                };
+                for field in fields {
+                    if !field.value.access.is_plain() {
+                        return Err(CompilerError::Unsupported(
+                            "atomic and volatile initialization is not supported".into(),
+                        ));
+                    }
+                    self.validate_initializer_access(&field.value.ty)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn initializer_member(&self, ty: &Type, target: c::AggregateTarget) -> Result<(u64, Type)> {
+        match target {
+            c::AggregateTarget::Index(index) => {
+                let Type::Array {
+                    element,
+                    length: Some(length),
+                } = self.module.resolved(ty)?
+                else {
+                    return Err(CompilerError::InvalidIr(
+                        "array initializer requires a complete array".into(),
+                    ));
+                };
+                if index >= *length {
+                    return Err(CompilerError::InvalidIr(
+                        "array initializer index out of bounds".into(),
+                    ));
+                }
+                let offset = self
+                    .module
+                    .size_of(element)?
+                    .checked_mul(index)
+                    .ok_or_else(|| {
+                        CompilerError::InvalidIr("array initializer offset exceeds u64".into())
+                    })?;
+                Ok((offset, element.as_ref().clone()))
+            }
+            c::AggregateTarget::Field(index) => {
+                let c::TypeDefinitionKind::Record {
+                    kind,
+                    fields: Some(fields),
+                    layout: Some(layout),
+                } = self.module.record_definition(ty)?
+                else {
+                    return Err(CompilerError::InvalidIr(
+                        "initializer requires a complete record".into(),
+                    ));
+                };
+                if matches!(kind, c::RecordKind::Union) {
+                    return Err(CompilerError::Unsupported(
+                        "union initializers are not supported".into(),
+                    ));
+                }
+                let field = &fields
+                    .get(index)
+                    .ok_or_else(|| {
+                        CompilerError::InvalidIr("initializer field index out of bounds".into())
+                    })?
+                    .value;
+                if field.bit_width.is_some() {
+                    return Err(CompilerError::Unsupported(
+                        "bit-field initializers are not supported".into(),
+                    ));
+                }
+                if !field.access.is_plain() {
+                    return Err(CompilerError::Unsupported(
+                        "atomic and volatile initialization is not supported".into(),
+                    ));
+                }
+                let offset = *layout.offsets.get(index).ok_or_else(|| {
+                    CompilerError::InvalidIr("initializer field offset is missing".into())
+                })?;
+                Ok((offset, field.ty.clone()))
+            }
+            c::AggregateTarget::Range { .. } => Err(CompilerError::Unsupported(
+                "range initializers are not supported".into(),
+            )),
+        }
     }
 }

@@ -77,24 +77,27 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
     }
 
     pub(super) fn record_layout(&self, ty: &Type) -> Result<&c::RecordLayout> {
-        let Type::Defined(id) = self.resolved(ty)? else {
-            return Err(CompilerError::InvalidIr("expected record type".into()));
-        };
-        match &self
-            .module
-            .types
-            .iter()
-            .find(|definition| definition.value.id == *id)
-            .ok_or_else(|| CompilerError::InvalidIr("missing record type".into()))?
-            .value
-            .kind
-        {
+        match self.record_definition(ty)? {
             c::TypeDefinitionKind::Record {
                 layout: Some(layout),
                 ..
             } => Ok(layout),
             _ => Err(CompilerError::Unsupported("incomplete record type".into())),
         }
+    }
+
+    pub(super) fn record_definition(&self, ty: &Type) -> Result<&c::TypeDefinitionKind> {
+        let Type::Defined(id) = self.resolved(ty)? else {
+            return Err(CompilerError::InvalidIr("expected record type".into()));
+        };
+        Ok(&self
+            .module
+            .types
+            .iter()
+            .find(|definition| definition.value.id == *id)
+            .ok_or_else(|| CompilerError::InvalidIr("missing record type".into()))?
+            .value
+            .kind)
     }
 
     pub(super) fn object_layout(&self, ty: &Type, alignment: Option<u64>) -> Result<ObjectLayout> {

@@ -54,6 +54,11 @@ effects. Places lower to addresses. Use `scalar_value` only for scalar operands
 and `write_value` for stores and copies. Extend the representation when adding
 split ABI values or access metadata; update its consumers together.
 
+Automatic aggregate initializers write members directly into local storage.
+Follow Slate's member order, recurse into nested arrays and records, and clear
+the object first when `zero_fill` is set. Copy-valued members use the same
+snapshot representation as ordinary aggregate assignments.
+
 Return typed `CompilerError` diagnostics. Attach the innermost Slate expansion
 span with `at`; drivers retain source files and attach their contents before
 rendering or serialization. Preserve frontend diagnostics and related errors.
