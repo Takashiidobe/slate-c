@@ -24,6 +24,22 @@
 - See [filetest instructions](tests/filetests/README.md) for fixture syntax.
 - `CLAUDE.md` must be a symlink to `AGENTS.md`; edit this file only.
 
+## End-of-turn commit policy
+
+Commit completed work after all of these checks pass:
+
+```sh
+cargo check
+cargo fmt
+cargo clippy --allow-dirty --fix --all-targets
+cargo nextest r --release --no-fail-fast
+```
+
+Rerun affected checks after fixes. Review and commit the changes made for the
+task, then end the turn; do not start another ticket. This policy authorizes
+local commits and overrides the conservative Beads commit default below.
+Pushes and remote Beads sync still require an explicit user request.
+
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
 > **Architecture in one line:** Issues live in a local Dolt database
