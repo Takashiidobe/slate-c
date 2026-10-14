@@ -1,6 +1,6 @@
-use super::FunctionLowerer;
-use anyhow::{Context, Result, ensure};
-use cranelift_codegen::ir::{self as clif, InstBuilder, types};
+use super::{FunctionLowerer, LoweredValue};
+use crate::diagnostics::{CompilerError, Result};
+use cranelift_codegen::ir::InstBuilder;
 use cranelift_module::{Linkage, Module};
 use slate_parser::ir::{self as c, BindingId, Type};
 
@@ -12,18 +12,19 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         abi: &c::AbiSignature,
         arguments: &[c::Value],
         result_type: &Type,
-    ) -> Result<clif::Value> {
-        ensure!(
-            !abi.has_nontrivial_pass(),
-            "aggregate or non-C calling convention is not supported"
-        );
+    ) -> Result<LoweredValue> {
+        if abi.has_nontrivial_pass() {
+            return Err(CompilerError::Unsupported(
+                "aggregate or non-C calling convention is not supported".to_string(),
+            ));
+        }
         let declaration = self
             .module
             .module
             .functions
             .iter()
             .find(|f| f.value.id == binding)
-            .context("missing called function")?;
+            .ok_or_else(|| CompilerError::InvalidIr("missing called function".into()))?;
         let name = declaration
             .value
             .symbol
@@ -36,7 +37,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             .scalar_signature(arguments.iter().map(|argument| &argument.ty), result_type)?;
         let values = arguments
             .iter()
-            .map(|argument| self.value(argument))
+            .map(|argument| self.scalar_value(argument))
             .collect::<Result<Vec<_>>>()?;
         let id = if let Some(id) = self.module.symbols.functions.get(&binding) {
             *id
@@ -54,11 +55,9 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         let imported = self.builder.func.import_signature(signature);
         self.builder.func.dfg.ext_funcs[reference].signature = imported;
         let call = self.builder.ins().call(reference, &values);
-        Ok(self
-            .builder
-            .inst_results(call)
-            .first()
-            .copied()
-            .unwrap_or_else(|| self.builder.ins().iconst(types::I8, 0)))
+        Ok(match self.builder.inst_results(call).first() {
+            Some(value) => LoweredValue::Scalar(*value),
+            None => LoweredValue::Void,
+        })
     }
 }

@@ -1,5 +1,5 @@
 use super::ModuleLowerer;
-use anyhow::{Result, ensure};
+use crate::diagnostics::{CompilerError, Result};
 use cranelift_module::{DataId, FuncId, Linkage, Module};
 use slate_parser::ir::{self as c, BindingId};
 use std::collections::HashMap;
@@ -22,49 +22,66 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
         let mut functions = HashMap::new();
         let mut globals = HashMap::new();
         for global in &self.module.globals {
-            let global = &global.value;
-            ensure!(
-                global.variable.storage != c::StorageDuration::Thread,
-                "thread-local storage is not supported"
-            );
-            let name = global
-                .symbol
-                .asm_name
-                .as_deref()
-                .unwrap_or(&global.variable.name);
-            let linkage = if !global.definition {
-                Linkage::Import
-            } else {
-                self.linkage(global.linkage)
-            };
-            let id = self
-                .backend
-                .declare_data(name, linkage, !global.variable.is_const, false)?;
-            globals.insert(global.variable.id, id);
+            let location = global.expansion;
+            (|| -> Result<()> {
+                let global = &global.value;
+                if global.variable.storage == c::StorageDuration::Thread {
+                    return Err(CompilerError::Unsupported(
+                        "thread-local storage is not supported".to_string(),
+                    ));
+                }
+                let name = global
+                    .symbol
+                    .asm_name
+                    .as_deref()
+                    .unwrap_or(&global.variable.name);
+                let linkage = if !global.definition {
+                    Linkage::Import
+                } else {
+                    self.linkage(global.linkage)
+                };
+                let id =
+                    self.backend
+                        .declare_data(name, linkage, !global.variable.is_const, false)?;
+                globals.insert(global.variable.id, id);
+
+                Ok(())
+            })()
+            .map_err(|error| error.at(location))?;
         }
         for function in &self.module.functions {
-            let function = &function.value;
-            if function.body.is_none() || function.semantics.inline_only {
+            if function.value.body.is_none() || function.value.semantics.inline_only {
                 continue;
             }
-            ensure!(
-                !function.semantics.naked && function.semantics.target.is_empty(),
-                "target function attributes are not supported"
-            );
-            ensure!(
-                function.symbol.alias.is_none() && function.symbol.ifunc.is_none(),
-                "function aliases are not supported"
-            );
-            let signature = self.function_signature(function)?;
-            let name = function
-                .symbol
-                .asm_name
-                .as_deref()
-                .unwrap_or(&function.name);
-            let id =
-                self.backend
-                    .declare_function(name, self.linkage(function.linkage), &signature)?;
-            functions.insert(function.id, id);
+            let location = function.expansion;
+            (|| -> Result<()> {
+                let function = &function.value;
+                if function.semantics.naked || !function.semantics.target.is_empty() {
+                    return Err(CompilerError::Unsupported(
+                        "target function attributes are not supported".to_string(),
+                    ));
+                }
+                if function.symbol.alias.is_some() || function.symbol.ifunc.is_some() {
+                    return Err(CompilerError::Unsupported(
+                        "function aliases are not supported".to_string(),
+                    ));
+                }
+                let signature = self.function_signature(function)?;
+                let name = function
+                    .symbol
+                    .asm_name
+                    .as_deref()
+                    .unwrap_or(&function.name);
+                let id = self.backend.declare_function(
+                    name,
+                    self.linkage(function.linkage),
+                    &signature,
+                )?;
+                functions.insert(function.id, id);
+
+                Ok(())
+            })()
+            .map_err(|error| error.at(location))?;
         }
         self.symbols = Symbols { functions, globals };
         Ok(())

@@ -6,7 +6,7 @@ Native JIT execution and browser object compilation use the same lowering code.
 Run the backend regression tests after changing a lowering rule:
 
 ```sh
-cargo test --all-features
+cargo test
 ```
 
 ## Add an operation
@@ -27,8 +27,11 @@ Implement its methods in the relevant module and read the Slate IR through
 Use the shared `FunctionLowerer` for builder access and per-function state.
 Its `self.module` borrows the owning `ModuleLowerer`, so call helpers such as
 `self.module.scalar(ty)` without passing the Slate module. Add
-an execution test in `tests/pipeline.rs` and a cross-compilation case in
-`tests/cross.rs` when the change affects object output or calls.
+an execution fixture under `tests/filetests/` and a focused CLIF fixture when
+instruction selection during lowering matters. Use regex captures for generated
+identifiers. See the [fixture instructions](../../tests/filetests/README.md).
+Do not add unit tests. Browser execution is only needed for browser integration
+changes; native fixtures are the primary regression coverage.
 
 ## Extend types, calls, or globals
 
@@ -39,9 +42,15 @@ calls; change `runtime.rs` for helper symbol conventions.
 Use `data.rs` for static initializer encoding and relocations. Use `symbols.rs`
 for module declarations and linkage. Keep module orchestration in `mod.rs`.
 
-Values currently lower to scalar Cranelift values, and places lower to
-addresses. Extend those representations when adding aggregates, split values,
-or access metadata; update their consumers together.
+`LoweredValue` represents void, scalar Cranelift values, and aggregates in
+temporary storage. Aggregate reads capture their contents before later side
+effects. Places lower to addresses. Use `scalar_value` only for scalar operands
+and `write_value` for stores and copies. Extend the representation when adding
+split ABI values or access metadata; update its consumers together.
+
+Return typed `CompilerError` diagnostics. Attach the innermost Slate expansion
+span with `at`; drivers retain source files and attach their contents before
+rendering or serialization. Preserve frontend diagnostics and related errors.
 
 ## Keep execution requirements in the driver
 

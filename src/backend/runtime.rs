@@ -1,4 +1,4 @@
-use anyhow::{Result, ensure};
+use crate::diagnostics::{CompilerError, Result};
 use slate_parser::ir::Type;
 
 use super::ModuleLowerer;
@@ -9,25 +9,26 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
         if !matches!(signature, Type::Function { variadic: true, .. }) {
             return Ok(name.to_owned());
         }
-        ensure!(
-            matches!(
-                name,
-                "printf"
-                    | "fprintf"
-                    | "sprintf"
-                    | "snprintf"
-                    | "scanf"
-                    | "fscanf"
-                    | "sscanf"
-                    | "dprintf"
-                    | "asprintf"
-                    | "open"
-                    | "openat"
-                    | "fcntl"
-                    | "ioctl"
-            ),
-            "variadic calls to {name} are not supported"
-        );
+        if !matches!(
+            name,
+            "printf"
+                | "fprintf"
+                | "sprintf"
+                | "snprintf"
+                | "scanf"
+                | "fscanf"
+                | "sscanf"
+                | "dprintf"
+                | "asprintf"
+                | "open"
+                | "openat"
+                | "fcntl"
+                | "ioctl"
+        ) {
+            return Err(CompilerError::Unsupported(format!(
+                "variadic calls to {name} are not supported"
+            )));
+        }
         Ok(format!("__slate_vararg_{name}"))
     }
 }

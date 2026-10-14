@@ -1,5 +1,29 @@
 # Agent Instructions
 
+## Testing and target policy
+
+- Use typed compiler errors derived with `thiserror` and `miette::Diagnostic`.
+  Preserve source spans, source files, diagnostic codes, and related errors
+  through lowering and driver boundaries. Render diagnostics natively and
+  return structured diagnostics to the browser; do not flatten errors into
+  strings before rendering or serialization.
+
+- Support x86_64 Linux with the SysV ABI. Do not add other architectures.
+- Do not write unit tests. Use integration tests and C filetest fixtures.
+- Add lowering regressions under `tests/filetests/`; the harness discovers C
+  files recursively and gives each fixture its own test name.
+- Test native execution primarily. Check process exit status, stdout, and
+  stderr separately; use Rust FileCheck for output and focused CLIF checks.
+- Use regex variables and captures for generated CLIF identifiers. Check the
+  relevant lowering behavior rather than snapshotting entire functions.
+- Run `cargo test` for routine validation. Browser execution is expensive;
+  only test it when a change specifically affects browser integration.
+- Keep shared lowering usable by both native and browser drivers. Use
+  `cargo check --no-default-features --features browser` when changing shared
+  code or feature gates; this does not execute the browser.
+- See [filetest instructions](tests/filetests/README.md) for fixture syntax.
+- `CLAUDE.md` must be a symlink to `AGENTS.md`; edit this file only.
+
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
 > **Architecture in one line:** Issues live in a local Dolt database

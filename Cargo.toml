@@ -6,19 +6,27 @@ default-run = "slate-c"
 
 [lib]
 crate-type = ["rlib"]
+test = false
+
+[[test]]
+name = "filetests"
+path = "tests/filetests.rs"
+harness = false
+required-features = ["native"]
 
 [[bin]]
 name = "slate-c"
 path = "src/main.rs"
 required-features = ["native"]
+test = false
 
 [[bin]]
 name = "slate-c-browser"
 path = "src/browser.rs"
 required-features = ["browser"]
+test = false
 
 [dependencies]
-anyhow = "1"
 cranelift-codegen = { version = "0.136.2", default-features = false, features = [
   "std",
 ] }
@@ -31,6 +39,8 @@ slate-parser = { version = "0.3" }
 target-lexicon = "0.13"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+miette = { version = "7.6.0", default-features = false, features = ["derive"] }
+thiserror = "2.0.21"
 
 [features]
 default = ["native"]
@@ -49,3 +59,10 @@ browser = [
   "dep:cranelift-object",
   "cranelift-codegen/x86",
 ]
+
+[dev-dependencies]
+anyhow = "1"
+filecheck = "0.5.0"
+libtest-mimic = "0.8.2"
+tempfile = "3.27.0"
+wait-timeout = "0.2.1"

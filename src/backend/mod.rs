@@ -5,9 +5,7 @@ mod layout;
 mod runtime;
 mod symbols;
 
-#[cfg(feature = "browser")]
-use anyhow::Context;
-use anyhow::{Result, ensure};
+use crate::diagnostics::{CompilerError, Result};
 use cranelift_codegen::ir as clif;
 use cranelift_frontend::FunctionBuilderContext;
 #[cfg(feature = "native")]
@@ -31,7 +29,6 @@ pub struct FunctionOutput {
 pub struct Output {
     #[cfg(feature = "native")]
     pub functions_by_binding: HashMap<BindingId, FuncId>,
-    #[cfg(feature = "browser")]
     pub clif: String,
     #[cfg(feature = "browser")]
     pub functions: Vec<FunctionOutput>,
@@ -54,42 +51,49 @@ pub fn lower(slate: &c::Module, backend: &mut impl Module) -> Result<Output> {
 
 impl<M: Module> ModuleLowerer<'_, '_, M> {
     fn lower(&mut self) -> Result<Output> {
-        ensure!(
-            self.module.asm.is_empty(),
-            "global assembly is not supported"
-        );
+        if let Some(assembly) = self.module.asm.first() {
+            return Err(
+                CompilerError::Unsupported("global assembly is not supported".to_string())
+                    .at(assembly.expansion),
+            );
+        };
         self.declare_symbols()?;
         self.define_globals()?;
         let output = Output {
             #[cfg(feature = "native")]
             functions_by_binding: self.symbols.functions.clone(),
-            #[cfg(feature = "browser")]
             clif: String::new(),
             #[cfg(feature = "browser")]
             functions: Vec::new(),
         };
-        #[cfg(feature = "browser")]
         let mut output = output;
         for function in &self.module.functions {
+            let location = function.expansion;
             let function = &function.value;
             let Some(&id) = self.symbols.functions.get(&function.id) else {
                 continue;
             };
             let mut context = self.backend.make_context();
-            context.func.signature = self.function_signature(function)?;
+            context.func.signature = self
+                .function_signature(function)
+                .map_err(|error| error.at(location))?;
             context.func.name = clif::UserFuncName::user(0, id.as_u32());
             let mut builder_context = FunctionBuilderContext::new();
-            self.lower_function(function, &mut context.func, &mut builder_context)?;
-            #[cfg(feature = "browser")]
+            self.lower_function(function, &mut context.func, &mut builder_context)
+                .map_err(|error| error.at(location))?;
             output.clif.push_str(&format!(
                 "; {}\n{}\n",
                 function.name,
                 context.func.display()
             ));
-            self.backend.define_function(id, &mut context)?;
+            self.backend
+                .define_function(id, &mut context)
+                .map_err(|error| CompilerError::from(error).at(location))?;
             #[cfg(feature = "browser")]
             {
-                let compiled = context.compiled_code().context("missing machine code")?;
+                let compiled = context
+                    .compiled_code()
+                    .ok_or_else(|| CompilerError::InvalidIr("missing machine code".into()))?;
                 output.functions.push(FunctionOutput {
                     name: function.name.clone(),
                     code: compiled.buffer.data().to_vec(),

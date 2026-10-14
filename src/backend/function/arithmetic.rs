@@ -1,5 +1,5 @@
 use super::FunctionLowerer;
-use anyhow::{Result, bail};
+use crate::diagnostics::{CompilerError, Result};
 use cranelift_codegen::ir::{self as clif, InstBuilder, types};
 use cranelift_module::Module;
 use slate_parser::ir::{self as c, Type};
@@ -43,7 +43,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
     }
 
     pub(super) fn condition(&mut self, value: &c::Value) -> Result<clif::Value> {
-        let value = self.value(value)?;
+        let value = self.scalar_value(value)?;
         let ty = self.builder.func.dfg.value_type(value);
         Ok(if ty.is_float() {
             let zero = if ty == types::F32 {
@@ -66,8 +66,8 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         left: &c::Value,
         right: &c::Value,
     ) -> Result<clif::Value> {
-        let lhs = self.value(left)?;
-        let rhs = self.value(right)?;
+        let lhs = self.scalar_value(left)?;
+        let rhs = self.scalar_value(right)?;
         let floating = self.builder.func.dfg.value_type(lhs).is_float();
         Ok(match (op, floating) {
             (c::ArithOp::Add, false) => self.builder.ins().iadd(lhs, rhs),
@@ -93,7 +93,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             (c::ArithOp::Sub, true) => self.builder.ins().fsub(lhs, rhs),
             (c::ArithOp::Mul, true) => self.builder.ins().fmul(lhs, rhs),
             (c::ArithOp::Div, true) => self.builder.ins().fdiv(lhs, rhs),
-            _ => bail!("unsupported arithmetic operation: {op}"),
+            _ => {
+                return Err(CompilerError::Unsupported(format!(
+                    "unsupported arithmetic operation: {op}"
+                )));
+            }
         })
     }
     pub(super) fn unary(
@@ -101,7 +105,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         op: &c::UnaryArithOp,
         operand: &c::Value,
     ) -> Result<clif::Value> {
-        let input = self.value(operand)?;
+        let input = self.scalar_value(operand)?;
         Ok(
             match (op, self.builder.func.dfg.value_type(input).is_float()) {
                 (c::UnaryArithOp::Neg, true) => self.builder.ins().fneg(input),
@@ -111,7 +115,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                     .ins()
                     .icmp_imm_s(clif::condcodes::IntCC::Equal, input, 0),
                 (c::UnaryArithOp::Not, false) => self.builder.ins().bnot(input),
-                _ => bail!("unsupported unary operation"),
+                _ => {
+                    return Err(CompilerError::Unsupported(
+                        "unsupported unary operation".to_string(),
+                    ));
+                }
             },
         )
     }
@@ -122,8 +130,8 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         right: &c::Value,
         result_type: &Type,
     ) -> Result<clif::Value> {
-        let lhs = self.value(left)?;
-        let rhs = self.value(right)?;
+        let lhs = self.scalar_value(left)?;
+        let rhs = self.scalar_value(right)?;
         let boolean = if self.builder.func.dfg.value_type(lhs).is_float() {
             use clif::condcodes::FloatCC;
             let code = match op {

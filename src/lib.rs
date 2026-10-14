@@ -1,3 +1,4 @@
+pub mod diagnostics;
 mod frontend;
 mod standalone;
 pub use frontend::parse;

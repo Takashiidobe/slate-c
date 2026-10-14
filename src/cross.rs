@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, ensure};
+use crate::diagnostics::{CompilerError, Result};
 use cranelift_codegen::{
     isa,
     settings::{self, Configurable, SetError, SettingKind},
@@ -38,12 +38,10 @@ pub struct FlagInfo {
 }
 
 pub fn flag_schema(target: &str) -> Result<Vec<FlagInfo>> {
-    let triple: target_lexicon::Triple = target.parse().map_err(|e| anyhow!("{e}"))?;
-    let backend = isa::lookup(triple.clone()).map_err(|e| anyhow!("{e}"))?;
+    let triple: target_lexicon::Triple = target.parse()?;
+    let backend = isa::lookup(triple.clone())?;
     let shared = settings::builder();
-    let defaults = isa::lookup(triple)
-        .map_err(|e| anyhow!("{e}"))?
-        .finish(settings::Flags::new(shared.clone()))?;
+    let defaults = isa::lookup(triple)?.finish(settings::Flags::new(shared.clone()))?;
     let values: std::collections::HashMap<_, _> = defaults
         .flags()
         .iter()
@@ -76,40 +74,44 @@ pub fn flag_schema(target: &str) -> Result<Vec<FlagInfo>> {
 }
 
 pub fn compile(request: &CompileRequest) -> Result<Compilation> {
-    ensure!(
-        matches!(
-            request.target.as_str(),
-            "x86_64-unknown-linux-gnu" | "x86_64-unknown-linux-musl"
-        ),
-        "unsupported target {}",
-        request.target
-    );
+    if !(matches!(
+        request.target.as_str(),
+        "x86_64-unknown-linux-gnu" | "x86_64-unknown-linux-musl"
+    )) {
+        return Err(CompilerError::Configuration(format!(
+            "unsupported target {}",
+            request.target
+        )));
+    };
     for flag in &request.c_flags {
-        ensure!(
-            !flag.starts_with("-O"),
-            "C optimization flags are not implemented; use Cranelift opt_level"
-        );
+        if flag.starts_with("-O") {
+            return Err(CompilerError::Configuration(
+                "C optimization flags are not implemented; use Cranelift opt_level".to_string(),
+            ));
+        }
     }
     let mut arguments = vec![format!("--target={}", request.target)];
     arguments.extend(request.c_flags.iter().cloned());
     let args = CompilerArgParser::parse(arguments)?;
-    ensure!(
-        args.target.triple == request.target,
-        "C flags conflict with the selected target"
-    );
-    ensure!(
-        args.options.codegen == slate_parser::compiler_options::CodegenOptions::default(),
-        "C code generation options are not implemented"
-    );
+    if args.target.triple != request.target {
+        return Err(CompilerError::Configuration(
+            "C flags conflict with the selected target".to_string(),
+        ));
+    };
+    if args.options.codegen != slate_parser::compiler_options::CodegenOptions::default() {
+        return Err(CompilerError::Configuration(
+            "C code generation options are not implemented".to_string(),
+        ));
+    };
     let search = args.search_paths()?;
     let dialect = Dialect::new(args.flavor, args.standard, args.target, args.options);
     let mut parser =
         Parser::new(search, dialect).with_preprocessor_inputs(args.preprocessor_inputs);
-    let slate = crate::frontend::parse_with(&mut parser, &request.source)?;
+    let parsed = crate::frontend::parse_with(&mut parser, &request.source)?;
 
     let mut shared = settings::builder();
-    let triple = request.target.parse().map_err(|e| anyhow!("{e}"))?;
-    let mut backend = isa::lookup(triple).map_err(|e| anyhow!("{e}"))?;
+    let triple = request.target.parse()?;
+    let mut backend = isa::lookup(triple)?;
     for flag in &request.cranelift_flags {
         let (name, value) = match flag.trim().split_once('=') {
             Some((name, value)) => (name.trim(), Some(value.trim())),
@@ -127,7 +129,8 @@ pub fn compile(request: &CompileRequest) -> Result<Compilation> {
     let isa = backend.finish(settings::Flags::new(shared))?;
     let mut module =
         ObjectModule::new(ObjectBuilder::new(isa, "slate-c", default_libcall_names())?);
-    let output = crate::backend::lower(&slate, &mut module)?;
+    let output = crate::backend::lower(&parsed.module, &mut module)
+        .map_err(|error| error.with_sources(&parsed.files, &request.source))?;
     Ok(Compilation {
         target: request.target.clone(),
         clif: output.clif,

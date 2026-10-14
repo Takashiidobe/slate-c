@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use crate::diagnostics::{CompilerError, Result};
 use cranelift_codegen::ir::{self as clif, types};
 use slate_parser::ir::{self as c, FloatType, NumericType, Type};
 
@@ -13,7 +13,7 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                 .types
                 .iter()
                 .find(|t| t.value.id == *id)
-                .context("missing type definition")?;
+                .ok_or_else(|| CompilerError::InvalidIr("missing type definition".into()))?;
             match &definition.value.kind {
                 c::TypeDefinitionKind::Alias(inner) => self.resolved(inner),
                 c::TypeDefinitionKind::Enum {
@@ -35,12 +35,20 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                 16 => types::I16,
                 32 => types::I32,
                 64 => types::I64,
-                _ => bail!("integer width {width} is not supported"),
+                _ => {
+                    return Err(CompilerError::Unsupported(format!(
+                        "integer width {width} is not supported"
+                    )));
+                }
             },
             Type::Numeric(NumericType::Float(FloatType::F32)) => types::F32,
             Type::Numeric(NumericType::Float(FloatType::F64)) => types::F64,
             Type::Pointer { .. } => types::I64,
-            other => bail!("unsupported scalar type: {other}"),
+            other => {
+                return Err(CompilerError::Unsupported(format!(
+                    "unsupported scalar type: {other}"
+                )));
+            }
         })
     }
 
@@ -49,6 +57,13 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
             self.resolved(ty),
             Ok(Type::Numeric(NumericType::Integer { signed: true, .. }))
         )
+    }
+
+    pub(super) fn aggregate(&self, ty: &Type) -> Result<bool> {
+        Ok(matches!(
+            self.resolved(ty)?,
+            Type::Array { .. } | Type::Defined(_)
+        ))
     }
 
     pub(super) fn size_of(&self, ty: &Type) -> Result<u64> {
@@ -62,7 +77,7 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                 .types
                 .iter()
                 .find(|t| t.value.id == *id)
-                .context("missing type")?
+                .ok_or_else(|| CompilerError::InvalidIr("missing type".into()))?
                 .value
                 .kind
             {
@@ -70,7 +85,9 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                     layout: Some(layout),
                     ..
                 } => Ok(layout.size),
-                _ => bail!("incomplete object type"),
+                _ => Err(CompilerError::Unsupported(
+                    "incomplete object type".to_string(),
+                )),
             },
             other => Ok(u64::from(self.scalar(other)?.bytes())),
         }

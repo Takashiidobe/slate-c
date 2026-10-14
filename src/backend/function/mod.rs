@@ -1,5 +1,5 @@
 use super::ModuleLowerer;
-use anyhow::{Context, Result};
+use crate::diagnostics::{CompilerError, Result};
 use cranelift_codegen::ir::{self as clif, InstBuilder, MemFlagsData, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::Module;
@@ -11,6 +11,27 @@ mod calls;
 mod control;
 mod memory;
 mod value;
+
+#[derive(Clone, Copy)]
+pub(super) enum LoweredValue {
+    Void,
+    Scalar(clif::Value),
+    Aggregate { address: clif::Value },
+}
+
+impl LoweredValue {
+    fn scalar(self) -> Result<clif::Value> {
+        match self {
+            Self::Scalar(value) => Ok(value),
+            Self::Void => Err(CompilerError::InvalidIr(
+                "expected scalar value, found void".to_string(),
+            )),
+            Self::Aggregate { .. } => Err(CompilerError::InvalidIr(
+                "expected scalar value, found aggregate".to_string(),
+            )),
+        }
+    }
+}
 
 pub(super) struct FunctionLowerer<'a, 'b, 's, 'm, M: Module> {
     builder: FunctionBuilder<'a>,
@@ -52,7 +73,12 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                         .store(MemFlagsData::new(), value, slot, 0);
                 }
             }
-            emitter.statements(function.body.as_ref().context("missing function body")?)?;
+            emitter.statements(
+                function
+                    .body
+                    .as_ref()
+                    .ok_or_else(|| CompilerError::InvalidIr("missing function body".into()))?,
+            )?;
             if !emitter.terminated() {
                 match &function.fallthrough {
                     Some(c::Fallthrough::ReturnZero) => {
@@ -60,8 +86,7 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                         emitter.builder.ins().return_(&[value]);
                     }
                     Some(c::Fallthrough::Return(value)) => {
-                        let value = emitter.value(value)?;
-                        emitter.builder.ins().return_(&[value]);
+                        emitter.return_value(Some(value))?;
                     }
                     Some(c::Fallthrough::ReturnVoid) => {
                         emitter.builder.ins().return_(&[]);

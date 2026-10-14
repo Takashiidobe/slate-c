@@ -1,35 +1,39 @@
-use anyhow::{Result, anyhow};
+use crate::diagnostics::Result;
 use slate_parser::{
     compiler_args::CompilerFlavor, dialect::Dialect, files::SearchPaths, ir as slate,
     parser::Parser, sema::Sema, target_info::TargetInfo,
 };
 
 pub fn parse(source: &str, target: &str) -> Result<slate::Module> {
+    Ok(parse_with_sources(source, target)?.module)
+}
+
+pub(crate) struct Parsed {
+    pub module: slate::Module,
+    #[cfg(any(feature = "native", feature = "browser"))]
+    pub files: slate_parser::files::Files,
+}
+
+pub(crate) fn parse_with_sources(source: &str, target: &str) -> Result<Parsed> {
     let target = TargetInfo::for_triple(target)?;
     let dialect = Dialect::for_flavor(CompilerFlavor::Clang, target);
     let mut parser = Parser::new(SearchPaths::default(), dialect);
     parse_with(&mut parser, source)
 }
 
-pub(crate) fn parse_with(parser: &mut Parser, source: &str) -> Result<slate::Module> {
-    let (unit, files) = parser
-        .parse_file_with_source(std::path::Path::new("input.c"), source.to_owned())
-        .map_err(|e| anyhow!("{e}"))?;
+pub(crate) fn parse_with(parser: &mut Parser, source: &str) -> Result<Parsed> {
+    let (unit, files) =
+        parser.parse_file_with_source(std::path::Path::new("input.c"), source.to_owned())?;
     let mut sema = Sema::new(&unit);
-    sema.names().map_err(|e| anyhow!("{e}"))?;
-    sema.analyze(&files).map_err(frontend_errors)?;
-    let (module, _) = sema.lower(&files).map_err(frontend_errors)?;
-    Ok(module)
-}
-
-pub(crate) fn frontend_errors(errors: slate_parser::sema::SemaErrors) -> anyhow::Error {
-    anyhow!(
-        "{}",
-        errors
-            .errors
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
-    )
+    sema.analyze(&files).map_err(|error| {
+        crate::diagnostics::CompilerError::from(error).with_sources(&files, source)
+    })?;
+    let (module, _) = sema.lower(&files).map_err(|error| {
+        crate::diagnostics::CompilerError::from(error).with_sources(&files, source)
+    })?;
+    Ok(Parsed {
+        module,
+        #[cfg(any(feature = "native", feature = "browser"))]
+        files,
+    })
 }

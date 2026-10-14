@@ -1,6 +1,6 @@
-use super::FunctionLowerer;
-use anyhow::{Context, Result, bail, ensure};
-use cranelift_codegen::ir::{InstBuilder, MemFlagsData};
+use super::{FunctionLowerer, LoweredValue};
+use crate::diagnostics::{CompilerError, Result};
+use cranelift_codegen::ir::InstBuilder;
 use cranelift_module::Module;
 use slate_parser::{
     ast::Span,
@@ -8,6 +8,24 @@ use slate_parser::{
 };
 
 impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
+    pub(super) fn return_value(&mut self, value: Option<&c::Value>) -> Result<()> {
+        let value = value.map(|value| self.value(value)).transpose()?;
+        match value {
+            None | Some(LoweredValue::Void) => {
+                self.builder.ins().return_(&[]);
+            }
+            Some(LoweredValue::Scalar(value)) => {
+                self.builder.ins().return_(&[value]);
+            }
+            Some(LoweredValue::Aggregate { .. }) => {
+                return Err(CompilerError::Unsupported(
+                    "aggregate returns are not supported".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn terminated(&self) -> bool {
         self.builder
             .current_block()
@@ -20,127 +38,175 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             if self.terminated() {
                 break;
             }
-            match &statement.value {
-                Statement::Comment(_) | Statement::Null => {}
-                Statement::Return(value) => {
-                    let values = if let Some(value) = value {
-                        vec![self.value(value)?]
+            self.statement(statement)
+                .map_err(|error| error.at(statement.expansion))?;
+        }
+        Ok(())
+    }
+
+    fn statement(&mut self, statement: &Span<Statement>) -> Result<()> {
+        match &statement.value {
+            Statement::Comment(_) | Statement::Null => {}
+            Statement::Return(value) => {
+                self.return_value(value.as_ref())?;
+            }
+            Statement::Expression(value) => {
+                self.value(value)?;
+            }
+            Statement::Block(body) => self.statements(body)?,
+            Statement::Temporary {
+                id,
+                ty,
+                initializer,
+                ..
+            } => {
+                let pointer = self.local(*id, ty)?;
+                if let Some(value) = initializer {
+                    self.initialize(pointer, ty, value)?;
+                }
+            }
+            Statement::Let(variable) => {
+                if variable.storage != c::StorageDuration::Automatic {
+                    return Err(CompilerError::Unsupported(
+                        "static local variables are not supported".to_string(),
+                    ));
+                }
+                if variable.cleanup.is_some() {
+                    return Err(CompilerError::Unsupported(
+                        "cleanup attributes are not supported".to_string(),
+                    ));
+                }
+                let pointer = self.local(variable.id, &variable.ty)?;
+                if let Some(value) = &variable.initializer {
+                    self.initialize(pointer, &variable.ty, value)?;
+                }
+            }
+            Statement::Write {
+                place,
+                value,
+                ordering,
+                ..
+            } => {
+                if ordering.is_some() {
+                    return Err(CompilerError::Unsupported(
+                        "atomic writes are not supported".to_string(),
+                    ));
+                }
+                let pointer = self.place(place)?;
+                let value = self.value(value)?;
+                self.write_value(pointer, &place.ty, value)?;
+            }
+            Statement::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                let condition = self.condition(condition)?;
+                let yes = self.builder.create_block();
+                let no = self.builder.create_block();
+                let merge = self.builder.create_block();
+                self.builder.ins().brif(condition, yes, &[], no, &[]);
+                self.builder.switch_to_block(yes);
+                self.statements(then_body)?;
+                if !self.terminated() {
+                    self.builder.ins().jump(merge, &[]);
+                }
+                self.builder.switch_to_block(no);
+                if let Some(body) = else_body {
+                    self.statements(body)?;
+                }
+                if !self.terminated() {
+                    self.builder.ins().jump(merge, &[]);
+                }
+                self.builder.switch_to_block(merge);
+            }
+            Statement::While {
+                id,
+                condition,
+                body,
+            } => self.loop_body(*id, &[], Some(condition), None, body, false)?,
+            Statement::DoWhile {
+                id,
+                condition,
+                body,
+            } => self.loop_body(*id, &[], Some(condition), None, body, true)?,
+            Statement::For {
+                id,
+                init,
+                condition,
+                increment,
+                body,
+            } => self.loop_body(
+                *id,
+                init,
+                condition.as_ref(),
+                increment.as_ref(),
+                body,
+                false,
+            )?,
+            Statement::Break(id) | Statement::Continue(id) => {
+                let (next, end) = self
+                    .loops
+                    .get(id)
+                    .ok_or_else(|| CompilerError::InvalidIr("unknown loop".into()))?;
+                self.builder.ins().jump(
+                    if matches!(statement.value, Statement::Break(_)) {
+                        *end
                     } else {
-                        Vec::new()
-                    };
-                    self.builder.ins().return_(&values);
-                }
-                Statement::Expression(value) => {
-                    self.value(value)?;
-                }
-                Statement::Block(body) => self.statements(body)?,
-                Statement::Temporary {
-                    id,
-                    ty,
-                    initializer,
-                    ..
-                } => {
-                    let pointer = self.local(*id, ty)?;
-                    if let Some(value) = initializer {
-                        self.initialize(pointer, ty, value)?;
-                    }
-                }
-                Statement::Let(variable) => {
-                    ensure!(
-                        variable.storage == c::StorageDuration::Automatic,
-                        "static local variables are not supported"
-                    );
-                    ensure!(
-                        variable.cleanup.is_none(),
-                        "cleanup attributes are not supported"
-                    );
-                    let pointer = self.local(variable.id, &variable.ty)?;
-                    if let Some(value) = &variable.initializer {
-                        self.initialize(pointer, &variable.ty, value)?;
-                    }
-                }
-                Statement::Write {
-                    place,
-                    value,
-                    ordering,
-                    ..
-                } => {
-                    ensure!(ordering.is_none(), "atomic writes are not supported");
-                    let pointer = self.place(place)?;
-                    let value = self.value(value)?;
-                    self.builder
-                        .ins()
-                        .store(MemFlagsData::new(), value, pointer, 0);
-                }
-                Statement::If {
-                    condition,
-                    then_body,
-                    else_body,
-                } => {
-                    let condition = self.condition(condition)?;
-                    let yes = self.builder.create_block();
-                    let no = self.builder.create_block();
-                    let merge = self.builder.create_block();
-                    self.builder.ins().brif(condition, yes, &[], no, &[]);
-                    self.builder.switch_to_block(yes);
-                    self.statements(then_body)?;
-                    if !self.terminated() {
-                        self.builder.ins().jump(merge, &[]);
-                    }
-                    self.builder.switch_to_block(no);
-                    if let Some(body) = else_body {
-                        self.statements(body)?;
-                    }
-                    if !self.terminated() {
-                        self.builder.ins().jump(merge, &[]);
-                    }
-                    self.builder.switch_to_block(merge);
-                }
-                Statement::While {
-                    id,
-                    condition,
-                    body,
-                } => self.loop_body(*id, &[], Some(condition), None, body, false)?,
-                Statement::DoWhile {
-                    id,
-                    condition,
-                    body,
-                } => self.loop_body(*id, &[], Some(condition), None, body, true)?,
-                Statement::For {
-                    id,
-                    init,
-                    condition,
-                    increment,
-                    body,
-                } => self.loop_body(
-                    *id,
-                    init,
-                    condition.as_ref(),
-                    increment.as_ref(),
-                    body,
-                    false,
-                )?,
-                Statement::Break(id) | Statement::Continue(id) => {
-                    let (next, end) = self.loops.get(id).context("unknown loop")?;
-                    self.builder.ins().jump(
-                        if matches!(statement.value, Statement::Break(_)) {
-                            *end
-                        } else {
-                            *next
-                        },
-                        &[],
-                    );
-                }
-                unsupported @ (Statement::Fence { .. }
-                | Statement::Switch { .. }
-                | Statement::Case { .. }
-                | Statement::Default { .. }
-                | Statement::Goto(..)
-                | Statement::ComputedGoto(..)
-                | Statement::Asm(..)
-                | Statement::Label { .. }
-                | Statement::SehTry { .. }
-                | Statement::SehLeave(..)) => bail!("unsupported statement: {unsupported:?}"),
+                        *next
+                    },
+                    &[],
+                );
+            }
+            Statement::Fence { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "atomic fences are not supported".into(),
+                ));
+            }
+            Statement::Switch { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "switch statements are not supported".into(),
+                ));
+            }
+            Statement::Case { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "case labels are not supported".into(),
+                ));
+            }
+            Statement::Default { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "default labels are not supported".into(),
+                ));
+            }
+            Statement::Goto(..) => {
+                return Err(CompilerError::Unsupported(
+                    "goto statements are not supported".into(),
+                ));
+            }
+            Statement::ComputedGoto(..) => {
+                return Err(CompilerError::Unsupported(
+                    "computed goto statements are not supported".into(),
+                ));
+            }
+            Statement::Asm(..) => {
+                return Err(CompilerError::Unsupported(
+                    "inline assembly are not supported".into(),
+                ));
+            }
+            Statement::Label { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "labels are not supported".into(),
+                ));
+            }
+            Statement::SehTry { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "SEH statements are not supported".into(),
+                ));
+            }
+            Statement::SehLeave(..) => {
+                return Err(CompilerError::Unsupported(
+                    "SEH leave statements are not supported".into(),
+                ));
             }
         }
         Ok(())
