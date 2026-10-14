@@ -1,0 +1,8 @@
+{
+  "project": "Berkeley SoftFloat",
+  "release": "3e",
+  "url": "https://www.jhauser.us/arithmetic/SoftFloat-3e.zip",
+  "sha256": "21130ce885d35c1fe73fc1e1bf2244178167e05c6747cad5f450cc991714c746",
+  "specialization": "8086-SSE",
+  "changes": "Selected F80 operations, conversions, shared primitives and headers; normalized CRLF line endings and final blank lines. No algorithm changes."
+}

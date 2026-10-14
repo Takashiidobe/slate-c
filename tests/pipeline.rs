@@ -1,6 +1,15 @@
 #[cfg(feature = "native")]
 const RETURN_42: &str = include_str!("fixtures/return42.c");
 
+#[test]
+#[cfg(feature = "native")]
+fn jit_resolves_f80_runtime_helpers() {
+    assert_eq!(
+        slate_c::native::run(include_str!("filetests/runtime/f80_precision.c")).unwrap(),
+        42
+    );
+}
+
 #[cfg(feature = "native")]
 #[test]
 fn slate_to_native_returns_42() {

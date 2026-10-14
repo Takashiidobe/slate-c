@@ -13,3 +13,5 @@ mod entry;
 pub mod cross;
 #[cfg(feature = "native")]
 pub mod native;
+#[cfg(feature = "native")]
+pub mod runtime;

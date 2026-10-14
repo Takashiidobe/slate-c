@@ -62,6 +62,8 @@ def main():
     licenses.mkdir()
     shutil.copyfile(blink / 'BLINK-LICENSE', licenses / 'BLINK-LICENSE')
     shutil.copyfile(runtime / 'SOURCES.json', licenses / 'RUNTIME-SOURCES.json')
+    shutil.copyfile(ROOT / 'runtime/softfloat/vendor/COPYING.txt', licenses / 'SOFTFLOAT-LICENSE.txt')
+    shutil.copyfile(ROOT / 'runtime/softfloat/SOURCE.json', licenses / 'SOFTFLOAT-SOURCE.json')
     shutil.copytree(ROOT / 'www/runtime/licenses', licenses / 'runtime')
     shutil.copyfile(capstone / 'CAPSTONE-LICENSE', licenses / 'CAPSTONE-LICENSE')
     shutil.copyfile(EXPLORER / 'UPDATING.md', licenses / 'CAPSTONE-SOURCES.md')

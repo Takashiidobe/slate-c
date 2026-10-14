@@ -16,6 +16,9 @@ runtime contains musl, compiler helpers, GNU ld and its dependencies, and the
 SysV variadic-call adapters. It contains no kernel. GNU ld and user programs
 execute in separate Blink workers with fresh filesystems.
 
+`libslate.a` also contains the [SoftFloat F80 helpers](../../runtime/softfloat/README.md).
+Their pinned source and license are vendored in the repository.
+
 To update packages, update URLs and checksums together in `sources.json` and
 check both linking and execution in the browser. Keep musl headers and libraries
 from the same package release.

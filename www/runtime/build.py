@@ -3,10 +3,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+from runtime.softfloat.build_runtime import build as build_softfloat
 OUT = ROOT / 'build/blink-runtime'
 VARARGS = ['printf', 'fprintf', 'sprintf', 'snprintf', 'scanf', 'fscanf', 'sscanf',
            'dprintf', 'asprintf', 'open', 'openat', 'fcntl', 'ioctl']
@@ -16,6 +19,7 @@ FILES = [
     'usr/lib/libz.so.1', 'usr/lib/libzstd.so.1', 'usr/lib/libsframe.so.2',
     'usr/lib/crt1.o', 'usr/lib/crti.o', 'usr/lib/crtn.o', 'usr/lib/libc.a',
     'usr/lib/libgcc.a', 'usr/lib/libslate.a',
+    'usr/share/licenses/slate-softfloat/COPYING.txt',
 ]
 
 
@@ -36,7 +40,10 @@ def main():
                 member = next(member for member in archive if member.name.endswith('/libgcc.a'))
                 library = root / 'usr/lib/libgcc.a'
                 library.parent.mkdir(parents=True, exist_ok=True)
-                library.write_bytes(archive.extractfile(member).read())
+                contents = archive.extractfile(member)
+                if contents is None:
+                    raise RuntimeError('libgcc archive member has no contents')
+                library.write_bytes(contents.read())
             else:
                 members = [member for member in archive if member.name.startswith(('lib/', 'usr/lib/', 'usr/include/', 'usr/bin/ld'))]
                 archive.extractall(root, members=members, filter='data')
@@ -48,7 +55,14 @@ def main():
     (OUT / 'varargs.S').write_text('\n'.join(assembly) + '\n')
     subprocess.run(['clang', '--target=x86_64-unknown-linux-musl', '-c',
                     str(OUT / 'varargs.S'), '-o', str(OUT / 'varargs.o')], check=True)
-    subprocess.run(['llvm-ar', 'rcs', str(root / 'usr/lib/libslate.a'), str(OUT / 'varargs.o')], check=True)
+    softfloat = build_softfloat(OUT / 'softfloat', target='x86_64-unknown-linux-musl', sysroot=root)
+    runtime = root / 'usr/lib/libslate.a'
+    runtime.unlink(missing_ok=True)
+    subprocess.run(['llvm-ar', 'rcs', str(runtime), str(OUT / 'varargs.o'),
+                    *(str(path) for path in softfloat)], check=True)
+    license_path = root / 'usr/share/licenses/slate-softfloat/COPYING.txt'
+    license_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / 'runtime/softfloat/vendor/COPYING.txt', license_path)
     with tarfile.open(OUT / 'runtime.tar.gz', 'w:gz', format=tarfile.USTAR_FORMAT, dereference=True) as archive:
         for name in FILES:
             archive.add(root / name, arcname=name)

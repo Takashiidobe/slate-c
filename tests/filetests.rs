@@ -119,6 +119,7 @@ fn run(path: &Path) -> Result<()> {
     fs::write(&object, compilation.object)?;
     let linker = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
         .arg(&object)
+        .arg(slate_c::runtime::ARCHIVE)
         .arg("-o")
         .arg(&executable)
         .arg("-lm")

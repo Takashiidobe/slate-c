@@ -17,7 +17,8 @@ fn isa() -> Result<OwnedTargetIsa> {
 }
 
 pub fn run(source: &str) -> Result<i32> {
-    let builder = JITBuilder::with_isa(isa()?, default_libcall_names());
+    let mut builder = JITBuilder::with_isa(isa()?, default_libcall_names());
+    crate::runtime::register(&mut builder);
     let mut module = JITModule::new(builder);
     let parsed = crate::frontend::parse_with_sources(source, &module.isa().triple().to_string())?;
     let binding = crate::entry::main_binding(&parsed.module)
