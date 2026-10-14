@@ -1,6 +1,7 @@
 import { ConsoleStdout, Directory, File, OpenFile, PreopenDirectory, WASI } from './vendor/browser_wasi_shim/index.js';
 import { createDisassembler } from './disasm.mjs';
 import { linkProgram, runProgram } from './blink.mjs';
+import { describeElf } from './elf.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -105,19 +106,21 @@ async function compile(request, id) {
   for (const syntax of target.arch === 'x86_64' ? ['intel', 'att'] : ['intel']) {
     const disassembler = createDisassembler(target.arch, module, syntax);
     try {
-      compilation[syntax === 'att' ? 'attAssembly' : 'assembly'] = compilation.functions.map(fn => `${fn.name}:\n${disassembler.disassemble(fn.code).map(line =>
-        `  ${line.text}`).join('\n')}`).join('\n\n');
+      const lines = fn => disassembler.disassemble(fn.code);
+      const text = line => `  ${line.text}`;
+      const prefix = syntax === 'att' ? 'att' : '';
+      compilation[`${prefix}Assembly`] = compilation.functions.map(fn => `${fn.name}:\n${lines(fn).map(text).join('\n')}`).join('\n\n');
+      compilation[`${prefix}AssemblyBytes`] = compilation.functions.map(fn => {
+        const instructions = lines(fn).map(line => ({ ...line,
+          bytes: Array.from(line.bytes, byte => byte.toString(16).padStart(2, '0')).join(' '),
+        }));
+        const width = Math.max(0, ...instructions.map(line => line.bytes.length));
+        return `${fn.name}:\n${instructions.map(line => `${line.bytes.padEnd(width)} ${line.text}`).join('\n')}`;
+      }).join('\n\n');
     } finally { disassembler.close(); }
   }
-  const hexDump = bytes => {
-    const lines = [];
-    for (let offset = 0; offset < bytes.length; offset += 8) {
-      lines.push(`${offset.toString(16).padStart(8, '0')}  ${Array.from(bytes.slice(offset, offset + 8), byte => byte.toString(16).padStart(2, '0')).join(' ')}`);
-    }
-    return lines.join('\n');
-  };
-  compilation.binary = compilation.functions.map(fn => `${fn.name} (${fn.code.length} bytes):\n${hexDump(fn.code)}`).join('\n\n');
-  compilation.elf = hexDump(compilation.object);
+  compilation.elf = describeElf(compilation.object);
+  compilation.elfMeaning = describeElf(compilation.object, true);
   compiled = { key: key(request), compilation };
   return { ...compilation, ms };
 }

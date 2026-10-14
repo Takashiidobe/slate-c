@@ -56,8 +56,9 @@
       </section>
       <section aria-labelledby="clif-heading">
         <div class="section-header">
-          <h2 id="clif-heading"><select id="output-view" aria-label="Compiler output"><option value="clif">Cranelift IR</option><option value="assembly">Assembly</option><option value="binary">Machine code (hex)</option><option value="elf">ELF object (hex)</option></select></h2>
+          <h2 id="clif-heading"><select id="output-view" aria-label="Compiler output"><option value="clif">Cranelift IR</option><option value="assembly">Assembly</option><option value="elf">ELF object</option></select></h2>
           <select id="asm-syntax" aria-label="x86 assembly syntax" hidden><option value="intel">Intel</option><option value="att">AT&amp;T</option></select>
+          <label id="show-bytes-control" class="toggle-control" hidden><input id="show-bytes" type="checkbox"> Show bytes</label>
           <button id="copy-clif" type="button" class="copy-button" aria-label="Copy compiler output" title="Copy compiler output" disabled>Copy</button>
         </div>
         <div id="output-shell" class="editor-shell">

@@ -20,6 +20,8 @@ const stderr = document.querySelector('#stderr');
 const shell = document.querySelector('#output-shell');
 const view = document.querySelector('#output-view');
 const syntax = document.querySelector('#asm-syntax');
+const showBytesControl = document.querySelector('#show-bytes-control');
+const showBytes = document.querySelector('#show-bytes');
 const pending = new Map();
 let worker;
 let ready = false;
@@ -31,6 +33,8 @@ let debounce;
 let running = false;
 let starting = false;
 let schema = [];
+let showAssemblyBytes = false;
+let showElfMeaning = false;
 
 function setStatus(text, kind = '') { status.textContent = text; status.className = kind; }
 
@@ -124,7 +128,12 @@ function invalidate() {
 
 function showOutput() {
   syntax.hidden = view.value !== 'assembly' || !target.value.startsWith('x86_64');
-  const field = view.value === 'assembly' && !syntax.hidden && syntax.value === 'att' ? 'attAssembly' : view.value;
+  showBytesControl.hidden = !['assembly', 'elf'].includes(view.value);
+  showBytesControl.lastChild.textContent = view.value === 'elf' ? ' Show meaning' : ' Show bytes';
+  showBytes.checked = view.value === 'elf' ? showElfMeaning : showAssemblyBytes;
+  const att = view.value === 'assembly' && !syntax.hidden && syntax.value === 'att';
+  const field = view.value === 'assembly' ? `${att ? 'att' : ''}Assembly${showAssemblyBytes ? 'Bytes' : ''}`
+    : view.value === 'elf' && showElfMeaning ? 'elfMeaning' : view.value;
   output.setOption('mode', view.value === 'clif' ? 'slate-clif' : view.value === 'assembly' ? 'slate-assembly' : 'text/plain');
   output.setValue(compilation?.[field] ?? '');
   copyOutput.disabled = !compilation;
@@ -287,6 +296,11 @@ clifFlags.addEventListener('input', () => { changed(); renderSchema(); });
 target.addEventListener('change', () => { clifFlags.value = 'opt_level=speed'; showOutput(); changed(); if (ready) loadSchema(); });
 view.addEventListener('change', () => { showOutput(); save(); });
 syntax.addEventListener('change', () => { showOutput(); save(); });
+showBytes.addEventListener('change', () => {
+  if (view.value === 'elf') showElfMeaning = showBytes.checked;
+  else showAssemblyBytes = showBytes.checked;
+  showOutput();
+});
 document.querySelector('#flag-filter').addEventListener('input', () => { renderSchema(); save(); });
 button.addEventListener('click', run);
 cancel.addEventListener('click', () => { worker.postMessage({ type: 'cancel' }); setStatus('Cancelling…'); });
