@@ -71,14 +71,11 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
                             "global aliases are not supported".to_string(),
                         ));
                     }
-                    let size = self.size_of(&global.variable.ty)?;
+                    let layout =
+                        self.object_layout(&global.variable.ty, global.variable.alignment)?;
+                    let size = layout.size;
                     let mut data = DataDescription::new();
-                    data.set_align(
-                        global
-                            .variable
-                            .alignment
-                            .unwrap_or(size.min(8).next_power_of_two()),
-                    );
+                    data.set_align(layout.alignment);
                     if let Some(value) = &global.variable.initializer {
                         data.define(self.initial_bytes(value, size)?.into_boxed_slice());
                     } else {

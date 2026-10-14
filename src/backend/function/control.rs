@@ -60,7 +60,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                 initializer,
                 ..
             } => {
-                let pointer = self.local(*id, ty)?;
+                let pointer = self.local(*id, ty, None)?;
                 if let Some(value) = initializer {
                     self.initialize(pointer, ty, value)?;
                 }
@@ -76,7 +76,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                         "cleanup attributes are not supported".to_string(),
                     ));
                 }
-                let pointer = self.local(variable.id, &variable.ty)?;
+                let pointer = self.local(variable.id, &variable.ty, variable.alignment)?;
                 if let Some(value) = &variable.initializer {
                     self.initialize(pointer, &variable.ty, value)?;
                 }

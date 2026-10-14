@@ -32,6 +32,8 @@ pub enum CompilerError {
     Size(#[from] std::num::TryFromIntError),
     #[error(transparent)]
     Target(#[from] slate_parser::target_info::TargetError),
+    #[error(transparent)]
+    Layout(#[from] slate_parser::target_info::LayoutError),
     #[error("{0}")]
     TargetTriple(target_lexicon::ParseError),
     #[error(transparent)]

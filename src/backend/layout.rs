@@ -5,6 +5,12 @@ use slate_parser::ir::{self as c, FloatType, NumericType, Type};
 use super::ModuleLowerer;
 use cranelift_module::Module;
 
+#[derive(Clone, Copy)]
+pub(super) struct ObjectLayout {
+    pub size: u64,
+    pub alignment: u64,
+}
+
 impl<M: Module> ModuleLowerer<'_, '_, M> {
     pub(super) fn resolved<'a>(&'a self, ty: &'a Type) -> Result<&'a Type> {
         if let Type::Defined(id) = ty {
@@ -67,29 +73,75 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
     }
 
     pub(super) fn size_of(&self, ty: &Type) -> Result<u64> {
+        Ok(self.layout(ty)?.size)
+    }
+
+    pub(super) fn record_layout(&self, ty: &Type) -> Result<&c::RecordLayout> {
+        let Type::Defined(id) = self.resolved(ty)? else {
+            return Err(CompilerError::InvalidIr("expected record type".into()));
+        };
+        match &self
+            .module
+            .types
+            .iter()
+            .find(|definition| definition.value.id == *id)
+            .ok_or_else(|| CompilerError::InvalidIr("missing record type".into()))?
+            .value
+            .kind
+        {
+            c::TypeDefinitionKind::Record {
+                layout: Some(layout),
+                ..
+            } => Ok(layout),
+            _ => Err(CompilerError::Unsupported("incomplete record type".into())),
+        }
+    }
+
+    pub(super) fn object_layout(&self, ty: &Type, alignment: Option<u64>) -> Result<ObjectLayout> {
+        let mut layout = self.layout(ty)?;
+        if let Some(alignment) = alignment {
+            layout.alignment = alignment;
+        }
+        if !layout.alignment.is_power_of_two() {
+            return Err(CompilerError::InvalidIr(
+                "object alignment must be a nonzero power of two".into(),
+            ));
+        }
+        Ok(layout)
+    }
+
+    fn layout(&self, ty: &Type) -> Result<ObjectLayout> {
         match self.resolved(ty)? {
             Type::Array {
                 element,
                 length: Some(length),
-            } => Ok(self.size_of(element)? * length),
-            Type::Defined(id) => match &self
-                .module
-                .types
-                .iter()
-                .find(|t| t.value.id == *id)
-                .ok_or_else(|| CompilerError::InvalidIr("missing type".into()))?
-                .value
-                .kind
-            {
-                c::TypeDefinitionKind::Record {
-                    layout: Some(layout),
-                    ..
-                } => Ok(layout.size),
-                _ => Err(CompilerError::Unsupported(
-                    "incomplete object type".to_string(),
-                )),
-            },
-            other => Ok(u64::from(self.scalar(other)?.bytes())),
+            } => {
+                let element = self.layout(element)?;
+                let size = element.size.checked_mul(*length).ok_or_else(|| {
+                    CompilerError::Unsupported("array object size exceeds u64".into())
+                })?;
+                Ok(ObjectLayout {
+                    size,
+                    alignment: element.alignment,
+                })
+            }
+            Type::Defined(_) => {
+                let record = self.record_layout(ty)?;
+                Ok(ObjectLayout {
+                    size: record.size,
+                    alignment: record.align,
+                })
+            }
+            Type::Array { length: None, .. } => {
+                Err(CompilerError::Unsupported("incomplete array type".into()))
+            }
+            other => {
+                let storage = self.module.target.storage_of(other.clone())?;
+                Ok(ObjectLayout {
+                    size: storage.size_bytes,
+                    alignment: u64::from(storage.alignment_bytes),
+                })
+            }
         }
     }
 }

@@ -39,6 +39,12 @@ Keep type resolution and object sizes in `layout.rs`. Use Slate's record layout
 when accessing fields. Change `abi.rs` for signatures shared by definitions and
 calls; change `runtime.rs` for helper symbol conventions.
 
+Use `object_layout` for storage size and alignment, passing Slate's explicit
+object alignment when present. Scalar storage comes from Slate's target data;
+record size, alignment, and field offsets come from its record layout. Arrays
+use the element's padded size as their stride. Stack objects aligned beyond
+16 bytes reserve extra space and round their addresses inside the slot.
+
 Use `data.rs` for static initializer encoding and relocations. Use `symbols.rs`
 for module declarations and linkage. Keep module orchestration in `mod.rs`.
 

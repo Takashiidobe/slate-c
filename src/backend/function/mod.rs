@@ -36,10 +36,16 @@ impl LoweredValue {
 pub(super) struct FunctionLowerer<'a, 'b, 's, 'm, M: Module> {
     builder: FunctionBuilder<'a>,
     module: &'b mut ModuleLowerer<'s, 'm, M>,
-    locals: HashMap<BindingId, clif::StackSlot>,
+    locals: HashMap<BindingId, LocalSlot>,
     loops: HashMap<BindingId, (clif::Block, clif::Block)>,
     pointer: clif::Type,
     old: Option<clif::Value>,
+}
+
+#[derive(Clone, Copy)]
+struct LocalSlot {
+    slot: clif::StackSlot,
+    alignment: u64,
 }
 
 impl<M: Module> ModuleLowerer<'_, '_, M> {
@@ -66,7 +72,7 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
             if let c::Parameters::Prototype { fixed, .. } = &function.parameters {
                 let parameters = emitter.builder.block_params(entry).to_vec();
                 for (parameter, value) in fixed.iter().zip(parameters) {
-                    let slot = emitter.local(parameter.value.id, &parameter.value.ty)?;
+                    let slot = emitter.local(parameter.value.id, &parameter.value.ty, None)?;
                     emitter
                         .builder
                         .ins()
