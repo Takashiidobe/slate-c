@@ -59,6 +59,12 @@ Follow Slate's member order, recurse into nested arrays and records, and clear
 the object first when `zero_fill` is set. Copy-valued members use the same
 snapshot representation as ordinary aggregate assignments.
 
+Pointer subtraction lowers to the signed element difference between two
+addresses. Divide address offsets by the pointee element stride using signed
+division, preserving negative distances and scaling by scalar widths, nested
+array dimensions, or record layouts. Unsupported operand combinations such as
+void and function pointer elements produce explicit diagnostics.
+
 Return typed `CompilerError` diagnostics. Attach the innermost Slate expansion
 span with `at`; drivers retain source files and attach their contents before
 rendering or serialization. Preserve frontend diagnostics and related errors.

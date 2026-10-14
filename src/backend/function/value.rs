@@ -136,7 +136,8 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             | ValueKind::Arith { .. }
             | ValueKind::Unary { .. }
             | ValueKind::Compare { .. }
-            | ValueKind::PointerOffset { .. } => {
+            | ValueKind::PointerOffset { .. }
+            | ValueKind::PointerDifference { .. } => {
                 self.scalar_expression(value).map(LoweredValue::Scalar)
             }
             ValueKind::LabelAddress(..) => Err(CompilerError::Unsupported(
@@ -171,9 +172,6 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             )),
             ValueKind::Fence { .. } => Err(CompilerError::Unsupported(
                 "atomic fences are not supported".into(),
-            )),
-            ValueKind::PointerDifference { .. } => Err(CompilerError::Unsupported(
-                "pointer subtraction are not supported".into(),
             )),
             ValueKind::VaArg { .. } => Err(CompilerError::Unsupported(
                 "va_arg are not supported".into(),
@@ -299,6 +297,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                     self.builder.ins().iadd(base, offset)
                 })
             }
+            ValueKind::PointerDifference {
+                left,
+                right,
+                element,
+            } => self.pointer_difference(left, right, element, &value.ty),
             _ => Err(CompilerError::InvalidIr(format!(
                 "expected scalar expression: {value}"
             ))),

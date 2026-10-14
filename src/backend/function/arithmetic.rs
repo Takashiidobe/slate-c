@@ -2,7 +2,7 @@ use super::FunctionLowerer;
 use crate::diagnostics::{CompilerError, Result};
 use cranelift_codegen::ir::{self as clif, InstBuilder, types};
 use cranelift_module::Module;
-use slate_parser::ir::{self as c, Type};
+use slate_parser::ir::{self as c, NumericType, Type};
 
 impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
     pub(super) fn cast(
@@ -165,5 +165,56 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         } else {
             self.builder.ins().uextend(target, boolean)
         })
+    }
+    pub(super) fn pointer_difference(
+        &mut self,
+        left: &c::Value,
+        right: &c::Value,
+        element: &Type,
+        result_type: &Type,
+    ) -> Result<clif::Value> {
+        let resolved = self.module.resolved(element)?;
+        match resolved {
+            Type::Void => {
+                return Err(CompilerError::Unsupported(
+                    "pointer subtraction with void type is not supported".into(),
+                ));
+            }
+            Type::Function { .. } => {
+                return Err(CompilerError::Unsupported(
+                    "pointer subtraction with function type is not supported".into(),
+                ));
+            }
+            _ => {}
+        }
+        let stride = self.module.size_of(element)?;
+        let stride = i64::try_from(stride).map_err(|_| {
+            CompilerError::Unsupported("pointer subtraction stride exceeds i64".into())
+        })?;
+        if stride == 0 {
+            return Err(CompilerError::Unsupported(
+                "pointer subtraction with zero-sized element is not supported".into(),
+            ));
+        }
+        let lhs = self.scalar_value(left)?;
+        let rhs = self.scalar_value(right)?;
+        let lhs = self.cast(lhs, &left.ty, self.pointer)?;
+        let rhs = self.cast(rhs, &right.ty, self.pointer)?;
+        let diff = self.builder.ins().isub(lhs, rhs);
+        let difference = if stride == 1 {
+            diff
+        } else {
+            self.builder.ins().sdiv_imm_s(diff, stride)
+        };
+        let target = self.module.scalar(result_type)?;
+        self.cast(
+            difference,
+            &Type::Numeric(NumericType::Integer {
+                signed: true,
+                width: 64,
+                bit_precise: false,
+            }),
+            target,
+        )
     }
 }
