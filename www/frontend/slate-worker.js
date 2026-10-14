@@ -109,7 +109,14 @@ async function compile(request, id) {
       const lines = fn => disassembler.disassemble(fn.code);
       const text = line => `  ${line.text}`;
       const prefix = syntax === 'att' ? 'att' : '';
-      compilation[`${prefix}Assembly`] = compilation.functions.map(fn => `${fn.name}:\n${lines(fn).map(text).join('\n')}`).join('\n\n');
+      const decoded = compilation.functions.map(lines);
+      const hints = [];
+      for (const [index, fn] of compilation.functions.entries()) {
+        if (index) hints.push(null);
+        hints.push(null, ...decoded[index].map(line => ({ ...line, arch: target.arch, syntax })));
+      }
+      compilation[`${prefix}AssemblyHints`] = hints;
+      compilation[`${prefix}Assembly`] = compilation.functions.map((fn, index) => `${fn.name}:\n${decoded[index].map(text).join('\n')}`).join('\n\n');
       compilation[`${prefix}AssemblyBytes`] = compilation.functions.map(fn => {
         const instructions = lines(fn).map(line => ({ ...line,
           bytes: Array.from(line.bytes, byte => byte.toString(16).padStart(2, '0')).join(' '),

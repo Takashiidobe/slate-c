@@ -36,6 +36,203 @@ let starting = false;
 let schema = [];
 let showAssemblyBytes = false;
 let showElfMeaning = false;
+const instructionHelp = Object.fromEntries(['x86', 'arm'].map(arch => [arch,
+  fetch(`instruction-help/${arch}.json`).then(response => response.json()).catch(() => ({}))]));
+let activeAssemblyHints;
+let activeAssemblyTitles;
+
+function splitOperands(text) {
+  const parts = [];
+  let start = 0, depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    if ('[('.includes(text[i])) depth++;
+    else if ('])'.includes(text[i])) depth--;
+    else if (text[i] === ',' && depth === 0) { parts.push(text.slice(start, i).trim()); start = i + 1; }
+  }
+  if (text.slice(start).trim()) parts.push(text.slice(start).trim());
+  return parts;
+}
+
+function instructionRecord(hint, db) {
+  const [mnemonic, ...tail] = hint.text.split(/\s+/);
+  let key = mnemonic.toLowerCase();
+  const operandsText = tail.join(' ');
+  if (hint.arch === 'x86_64' && hint.syntax === 'att' && !db[key]) key = key.replace(/[bwlq]$/, '');
+  const records = db[hint.arch === 'x86_64' ? 'x86' : 'arm']?.[key];
+  if (!records) return null;
+  const actual = splitOperands(operandsText);
+  const score = record => {
+    const syntax = record.syntax ?? '';
+    const expected = splitOperands(syntax.slice(syntax.indexOf(' ') + 1));
+    const optional = splitOperands(syntax.slice(syntax.indexOf(' ') + 1).replace(/[{}]/g, ''));
+    let value = -Math.min(Math.abs(actual.length - expected.length), Math.abs(actual.length - optional.length)) * 4;
+    if (hint.arch === 'x86_64') {
+      for (let i = 0; i < Math.min(actual.length, expected.length); i++) {
+        const form = expected[i].toLowerCase();
+        const operand = actual[hint.syntax === 'att' ? actual.length - i - 1 : i].toLowerCase();
+        const family = /%?(?:r(?:ax|bx|cx|dx|si|di|sp|bp|\d+)|e(?:ax|bx|cx|dx|si|di|sp|bp))\b/.test(operand) ? 'gpr'
+          : /%?xmm\d+/.test(operand) ? 'xmm' : /%?ymm\d+/.test(operand) ? 'ymm' : /%?zmm\d+/.test(operand) ? 'zmm' : null;
+        if (family) value += form.includes(family) ? 8 : -8;
+        if (operand.startsWith('$')) value += /imm/.test(form) ? 5 : -2;
+        if (/\[|\(/.test(operand)) value += /m(?:\d+)?|r\/m/.test(form) ? 2 : 0;
+      }
+      return value;
+    }
+    if (record.isa?.length && !record.isa.includes('A64')) return -Infinity;
+    for (let i = 0; i < actual.length; i++) {
+      const operand = actual[i], form = expected[i] ?? '';
+      for (const [register, placeholder] of [[/[xy]\d+|\bsp\b/i, /<X/i], [/\bw\d+\b/i, /<W/i], [/\bv\d+\b/i, /<V/i], [/\bz\d+\b/i, /<Z/i], [/\bp\d+\b/i, /<P/i]]) {
+        if (register.test(operand)) value += placeholder.test(form) ? 5 : -4;
+      }
+      if (/[bhdsq]\d+/i.test(operand) && /<[BHDSQ]/.test(form)) value += 4;
+      if (operand.includes('[') === form.includes('[')) value++;
+      if (operand.includes('#') === form.includes('#')) value++;
+    }
+    return value;
+  };
+  return [...records].sort((a, b) => score(b) - score(a))[0];
+}
+
+function describeInstruction(record, hint) {
+  if (!record) return `Decoded instruction ${hint.text}.`;
+  const text = hint.text.trim();
+  const space = text.indexOf(' ');
+  const actual = splitOperands(space < 0 ? '' : text.slice(space + 1));
+  const template = splitOperands((record.syntax ?? '').replace(/^\S+\s*/, '').replace(/\s*\{.*$/, ''));
+  const values = {};
+  if (hint.arch === 'x86_64') {
+    for (let i = 0; i < Math.min(actual.length, template.length); i++) {
+      const index = hint.syntax === 'att' ? actual.length - i - 1 : i;
+      const role = record.operands?.[index]?.name;
+      if (role) values[role] = actual[i].replace(/^\*/, '').replace(/^%/, '').replace(/^\$/, '');
+    }
+    const clean = value => value?.replace(/^\*/, '').replace(/^%/, '').replace(/^\$/, '');
+    const mnemonic = record.syntax?.split(' ')[0]?.toLowerCase();
+    if (mnemonic === 'mov' && values.src && values.dest && /^[a-z]+\d*$/i.test(clean(values.src)) && /^[a-z]+\d*$/i.test(clean(values.dest))) {
+      const special = { rsp: 'current stack pointer', esp: 'current stack pointer', sp: 'current stack pointer', rbp: 'current base pointer', ebp: 'current base pointer', bp: 'current base pointer' };
+      const source = clean(values.src), destination = clean(values.dest);
+      return `Copies ${special[source.toLowerCase()] ? `${special[source.toLowerCase()]} (${source})` : source} into ${special[destination.toLowerCase()] ? `${special[destination.toLowerCase()]} (${destination})` : destination}. No flags are affected.`;
+    }
+    let description = record.description ?? record.summary;
+    if (values.src) description = description.replace(/\bsource operand\b/gi, `source (${values.src})`);
+    if (values.dest) description = description.replace(/\bdestination operand\b/gi, `destination (${values.dest})`);
+    if (actual.length === 1) {
+      const operand = clean(values.src ?? values.dest ?? actual[0]);
+      if (mnemonic === 'push') return `Pushes ${/^\s*\$/.test(actual[0]) ? operand : `the value in ${operand}`} onto the stack, then decrements rsp by 8 bytes and stores it at [rsp]. No flags are modified.`;
+      if (mnemonic === 'pop') return `Pops the value at [rsp] into ${operand}, then increments rsp by 8 bytes. No flags are modified.`;
+      description = description.replace(/\bthe operand\b/gi, operand).replace(/\boperand\b/gi, operand);
+    }
+    return `${record.name}. ${description}`;
+  }
+  for (let i = 0; i < Math.min(actual.length, template.length); i++) {
+    const names = [...template[i].matchAll(/<([^>]+)>/g)].flatMap(match => match[1].split('|'));
+    for (const name of names) {
+      const family = /^([BHWXSDQVZP])/.exec(name)?.[1];
+      const match = family ? new RegExp(`\\b${family}\\d+\\b|\\bSP\\b`, 'i').exec(actual[i]) : null;
+      values[name] = match?.[0] ?? actual[i];
+    }
+  }
+  let description = record.description ?? record.summary;
+  for (const name of Object.keys(values).sort((a, b) => b.length - a.length)) {
+    description = description.replace(new RegExp(`\\b${name}\\b`, 'g'), values[name]);
+  }
+  return `${record.name}. ${description}`;
+}
+
+function registerHelp(register, arch) {
+  const name = register.toLowerCase();
+  if (arch === 'x86_64') {
+    const roles = { rsp: 'Stack pointer.', esp: 'Low 32 bits of the stack pointer.', rbp: 'Base/frame pointer register.', ebp: 'Low 32 bits of the base/frame pointer.', rip: 'Instruction pointer.', eip: 'Low 32 bits of the instruction pointer.', rax: 'Accumulator register.', eax: 'Low 32 bits of the accumulator.' };
+    const argument = /^(rdi|edi|rsi|esi|rdx|edx|rcx|ecx|r8|r8d|r9|r9d)$/.exec(name);
+    if (argument) {
+      const index = { rdi: 1, edi: 1, rsi: 2, esi: 2, rdx: 3, edx: 3, rcx: 4, ecx: 4, r8: 5, r8d: 5, r9: 6, r9d: 6 }[name];
+      return `System V integer argument register ${index}; caller-saved.`;
+    }
+    return roles[name] ?? (/^(xmm|ymm|zmm|mm|k|st)\d+$/.test(name) ? 'Vector, mask, or floating-point register.' : 'General-purpose register.');
+  }
+  if (name === 'sp' || name === 'wsp') return `Stack pointer ${register}. SP/WSP refer to the same stack-pointer state as the general-purpose register bank.`;
+  if (name === 'xzr' || name === 'wzr') return 'Zero register. Reads as 0; writes are discarded.';
+  if (name === 'x29' || name === 'w29' || name === 'fp') return 'Frame pointer (x29/fp). Commonly points to the current stack frame; callee-saved. w29 is its low 32-bit view.';
+  if (name === 'x30' || name === 'w30' || name === 'lr') return 'Link register (x30/lr). A call instruction saves its return address here. w30 is its low 32-bit view.';
+  if (name === 'ip0' || name === 'x16') return 'Intra-procedure-call temporary register. Linkers may use it for veneers and stubs.';
+  if (name === 'ip1' || name === 'x17') return 'Intra-procedure-call temporary register. Linkers may use it for veneers and stubs.';
+  const gp = /^[xw](\d+)$/.exec(name);
+  if (gp) {
+    const n = Number(gp[1]);
+    if (n <= 7) return `${name[0] === 'w' ? `32-bit ${name} view of x${n}; writes clear the upper 32 bits. ` : '64-bit general-purpose register. '}Argument register ${n + 1}; x0 and x1 also carry integer results. Caller-saved.`;
+    if (n === 8) return `${name[0] === 'w' ? '32-bit w8 view of x8; writes clear the upper 32 bits. ' : '64-bit general-purpose register. '}Register ${name} carries an indirect result address; caller-saved.`;
+    if (n <= 17) return `${name[0] === 'w' ? `32-bit ${name} view of x${n}; writes clear the upper 32 bits. ` : '64-bit general-purpose register. '}Caller-saved temporary register.`;
+    if (n === 18) return 'Platform register x18/w18; use depends on the operating system ABI.';
+    if (n <= 29) return `${name[0] === 'w' ? `32-bit ${name} view of x${n}; writes clear the upper 32 bits. ` : '64-bit general-purpose register. '}Register ${name} is callee-saved; x29 is conventionally the frame pointer.`;
+    return `${name[0] === 'w' ? `32-bit ${name} view of x${n}; writes clear the upper 32 bits. ` : '64-bit general-purpose register. '}Caller-saved temporary register.`;
+  }
+  const vector = /^([vbsdqhz])(\d+)$/.exec(name);
+  if (vector) {
+    const [, kind, number] = vector, n = Number(number);
+    const view = { v: 'SIMD/floating-point', b: '8-bit SIMD/floating-point', h: '16-bit SIMD/floating-point', s: '32-bit SIMD/floating-point', d: '64-bit SIMD/floating-point', q: '128-bit SIMD/floating-point', z: 'scalable vector' }[kind];
+    if (kind === 'z') return `Scalable vector register ${name}. z registers overlap the corresponding v registers and hold vectors whose size depends on the active SVE vector length.`;
+    if (n <= 7) return `${view} register ${name}. The b/h/s/d/q/v names are views of the same SIMD register. Used for floating-point/vector arguments and results; caller-saved.`;
+    if (n <= 15) return `${view} register ${name}. The b/h/s/d/q/v names are views of the same SIMD register. Callee-saved for its low 64 bits; wider values are caller-saved.`;
+    return `${view} register ${name}. The b/h/s/d/q/v names are views of the same SIMD register; caller-saved.`;
+  }
+  if (/^p\d+$/.test(name)) {
+    const n = Number(name.slice(1));
+    return `Scalable vector predicate register ${name}. Controls which vector lanes participate in SVE operations.${n <= 3 ? ' p0-p3 can carry predicate arguments and results.' : ' Preservation across calls depends on whether the function uses scalable vector arguments.'}`;
+  }
+  if (name === 'nzcv') return 'Condition flags register: N (negative), Z (zero), C (carry), and V (overflow).';
+  if (name === 'fpcr') return 'Floating-point control register. Controls floating-point behavior such as rounding and exception handling.';
+  if (name === 'fpsr') return 'Floating-point status register. Holds cumulative floating-point exception status.';
+  return `AArch64 register ${register}.`;
+}
+
+function operandTitle(token, hint) {
+  const normalized = token.replace(/^%/, '').toLowerCase();
+  const operand = hint.operands?.find(item => item.kind === 'register' && item.name.toLowerCase() === normalized
+    || item.kind === 'memory' && [item.base, item.index].some(name => name && name.toLowerCase() === normalized));
+  if (operand?.kind === 'register') return registerHelp(operand.name, hint.arch);
+  if (operand?.kind === 'memory') {
+    const name = operand.base || operand.index;
+    if (name && name.toLowerCase() === normalized) return registerHelp(name, hint.arch);
+  }
+  const value = token.replace(/^[#$]/, '');
+  const immediate = hint.operands?.find(item => item.kind === 'immediate' && Number(item.value) === Number(value));
+  if (immediate) return `Immediate value ${Number(immediate.value)}.`;
+  const displacement = hint.operands?.find(item => item.kind === 'memory' && Number(item.displacement) === Number(value));
+  if (displacement) return `Memory address displacement ${Number(displacement.displacement)}.`;
+  return null;
+}
+
+async function markAssemblyHints(field) {
+  const hints = compilation?.[field.replace('Bytes', 'Hints')];
+  if (!hints) return;
+  const renderedText = output.getValue();
+  const dbs = await Promise.all(Object.values(instructionHelp));
+  if (output.getValue() !== renderedText) return;
+  activeAssemblyHints = hints;
+  activeAssemblyTitles = [];
+  for (let lineNo = 0; lineNo < Math.min(hints.length, output.lineCount()); lineNo++) {
+    const hint = hints[lineNo];
+    if (!hint?.decoded) continue;
+    const line = output.getLine(lineNo);
+    const record = instructionRecord(hint, { x86: dbs[0], arm: dbs[1] });
+    const description = describeInstruction(record, hint);
+    activeAssemblyTitles[lineNo] = description;
+    const start = line.search(/\S/);
+    if (start < 0) continue;
+    output.markText({ line: lineNo, ch: start }, { line: lineNo, ch: line.length }, { attributes: { title: description } });
+    const registerNames = hint.operands.flatMap(item => item.kind === 'register' ? [item.name] : item.kind === 'memory' ? [item.base, item.index].filter(Boolean) : []);
+    const names = registerNames.sort((a, b) => b.length - a.length).map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const registerPattern = names.length ? `(?<![a-zA-Z0-9_])%?(?:${names.join('|')})\\b|` : '';
+    const pattern = new RegExp(`${registerPattern}(?<![a-zA-Z0-9_])(?:[$#])?[+-]?(?:0x[\\da-fA-F]+|\\d+)(?![a-zA-Z0-9_])`, 'gi');
+    const instructionOffset = line.indexOf(hint.text, start);
+    const operandOffset = instructionOffset + hint.text.indexOf(' ') + 1;
+    const operandText = line.slice(operandOffset);
+    for (const match of operandText.matchAll(pattern)) {
+      const title = operandTitle(match[0], hint);
+      if (title) output.markText({ line: lineNo, ch: operandOffset + match.index }, { line: lineNo, ch: operandOffset + match.index + match[0].length }, { className: 'operand-help', attributes: { title } });
+    }
+  }
+}
 
 function setStatus(text, kind = '') { status.textContent = text; status.className = kind; }
 
@@ -145,6 +342,7 @@ function showOutput() {
     : view.value === 'ast' ? 'slate-sexpr' : view.value === 'tokens' ? 'slate-tokens'
       : view.value === 'slate_ir' ? 'slate-ir' : view.value === 'elf' ? 'slate-elf' : 'text/plain');
   output.setValue(compilation?.[field] ?? '');
+  if (view.value === 'assembly') markAssemblyHints(field).catch(error => console.error(error));
   copyOutput.disabled = !compilation;
 }
 
@@ -354,3 +552,41 @@ function saveBytes(bytes, filename) {
 downloadObject.addEventListener('click', () => saveBytes(compilation?.object, 'main.o'));
 for (const editor of [source, output]) new ResizeObserver(() => editor.refresh()).observe(editor.getWrapperElement().parentElement);
 startWorker();
+output.getWrapperElement().addEventListener('mousemove', async event => {
+  if (view.value !== 'assembly') return;
+  const lineElement = event.target.closest('.CodeMirror-line');
+  if (!lineElement) return;
+  const position = output.coordsChar({ left: event.clientX, top: event.clientY }, 'window');
+  const line = output.getLine(position.line);
+  let hint = activeAssemblyHints?.[position.line];
+  if (!hint?.decoded) {
+    const instruction = line.trim().replace(/^(?:[0-9a-f]{2} ){1,}/i, '');
+    const match = /^([a-z][a-z0-9.]*(?:\s+.*)?)$/i.exec(instruction);
+    const arch = target.value.startsWith('x86_64') ? 'x86_64' : 'aarch64';
+    if (!match || instruction.endsWith(':')) { lineElement.removeAttribute('title'); return; }
+    hint = { text: match[1], arch, syntax: arch === 'x86_64' ? syntax.value : 'intel', operands: [], decoded: true };
+  }
+  const dbs = await Promise.all(Object.values(instructionHelp));
+  const record = instructionRecord(hint, { x86: dbs[0], arm: dbs[1] });
+  let title = activeAssemblyTitles?.[position.line] ?? describeInstruction(record, hint);
+  const instructionOffset = line.indexOf(hint.text);
+  const operandStart = instructionOffset + (hint.text.indexOf(' ') < 0 ? hint.text.length : hint.text.indexOf(' ') + 1);
+  const operandText = line.slice(operandStart);
+  const names = hint.operands.flatMap(item => item.kind === 'register' ? [item.name] : item.kind === 'memory' ? [item.base, item.index].filter(Boolean) : [])
+    .sort((a, b) => b.length - a.length).map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const registerPattern = names.length ? `(?<![a-zA-Z0-9_])%?(?:${names.join('|')})\\b|` : '';
+  const pattern = new RegExp(`${registerPattern}(?<![a-zA-Z0-9_])(?:[$#])?[+-]?(?:0x[\\da-fA-F]+|\\d+)(?![a-zA-Z0-9_])`, 'gi');
+  for (const match of operandText.matchAll(pattern)) {
+    const start = operandStart + match.index;
+    if (position.ch >= start && position.ch <= start + match[0].length) title = operandTitle(match[0], hint) ?? title;
+  }
+  if (!hint.operands?.length) {
+    const tokenPattern = /%?[a-z][a-z0-9]*|[$#]?[+-]?(?:0x[\da-f]+|\d+)/gi;
+    for (const match of line.matchAll(tokenPattern)) {
+      if (position.ch < match.index || position.ch > match.index + match[0].length) continue;
+      if (/^(?:%?)(?:r(?:ax|bx|cx|dx|si|di|sp|bp|\d+[dwb]?)|e(?:ax|bx|cx|dx|si|di|sp|bp)|[xyz]mm\d+|[xw]\d+|[bhsdqv]\d+|[xw]zr|sp|wsp|lr|fp|p\d+)$/i.test(match[0])) title = registerHelp(match[0].replace(/^%/, ''), hint.arch);
+      else if (/^[$#]/.test(match[0])) title = `Immediate value ${match[0].replace(/^[$#]/, '')}.`;
+    }
+  }
+  if (lineElement.title !== title) lineElement.title = title;
+});

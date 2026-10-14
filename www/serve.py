@@ -8,6 +8,10 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
         self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
+        if self.path.split('?', 1)[0] in {
+            '/', '/index.html', '/app.js', '/slate-worker.js', '/disasm.mjs', '/manifest.json',
+        }:
+            self.send_header('Cache-Control', 'no-cache')
         super().end_headers()
 
 
