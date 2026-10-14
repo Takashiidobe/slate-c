@@ -1,0 +1,25 @@
+{
+  "packages": [
+    {
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/musl-dev-1.2.5-r23.apk",
+      "sha256": "19032a762b8c6967d3789de1bf540754a0121e517402022eebd3ae6f1c9965a4",
+      "license": "MIT",
+      "source": "musl",
+      "commit": "8aef0c37b0ad23dc4137f0e4755b97a59dc698b8"
+    },
+    {
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/x86_64/binutils-aarch64-2.45.1-r0.apk",
+      "sha256": "1360f9c820bbb9e9e7ba17e541f0affcc5440db3b8e033bd7dd960722bb5a0d4",
+      "license": "GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause",
+      "source": "binutils",
+      "commit": "accf42ac98479ed9df869377cb86c70da2011e72"
+    },
+    {
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.23/main/aarch64/compiler-rt-21.1.2-r0.apk",
+      "sha256": "c8dc9a9e98a23a30f4b5c89f44b7978e1d45db637742824304e0031aca12b200",
+      "license": "Apache-2.0",
+      "source": "compiler-rt",
+      "commit": "280e0f7f7891b54c11a5f900e5b65446e14e3dfb"
+    }
+  ]
+}

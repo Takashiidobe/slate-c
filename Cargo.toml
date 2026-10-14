@@ -58,6 +58,7 @@ browser = [
   "dep:cranelift-module",
   "dep:cranelift-object",
   "cranelift-codegen/x86",
+  "cranelift-codegen/arm64",
 ]
 
 [dev-dependencies]

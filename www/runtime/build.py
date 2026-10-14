@@ -21,6 +21,23 @@ FILES = [
     'usr/lib/libgcc.a', 'usr/lib/libslate.a',
     'usr/share/licenses/slate-softfloat/COPYING.txt',
 ]
+ARCHIVE_SOURCES = ROOT / 'www/runtime/aarch64-sources.json'
+
+
+def download(package, downloads):
+    path = downloads / package['url'].rsplit('/', 1)[1]
+    if not path.exists():
+        subprocess.run(['curl', '-fL', '--retry', '3', package['url'], '-o', str(path)], check=True)
+    if hashlib.sha256(path.read_bytes()).hexdigest() != package['sha256']:
+        raise RuntimeError(f'checksum mismatch: {path}')
+    return path
+
+
+def extract(package, path, root):
+    with tarfile.open(path, 'r:*') as archive:
+        members = [member for member in archive if member.name.startswith(
+            ('lib/', 'usr/lib/', 'usr/include/', 'usr/bin/ld', 'usr/aarch64-alpine-linux-musl/'))]
+        archive.extractall(root, members=members, filter='data')
 
 
 def main():
@@ -30,13 +47,9 @@ def main():
     downloads = ROOT / 'build/runtime/downloads/x86_64'
     downloads.mkdir(parents=True, exist_ok=True)
     for package in sources['packages']:
-        path = downloads / package['url'].rsplit('/', 1)[1]
-        if not path.exists():
-            subprocess.run(['curl', '-fL', '--retry', '3', package['url'], '-o', str(path)], check=True)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != package['sha256']:
-            raise RuntimeError(f'checksum mismatch: {path}')
-        with tarfile.open(path, ignore_zeros=True) as archive:
-            if path.name.startswith('gcc-'):
+        path = download(package, downloads)
+        if package['source'] == 'gcc':
+            with tarfile.open(path, 'r:*') as archive:
                 member = next(member for member in archive if member.name.endswith('/libgcc.a'))
                 library = root / 'usr/lib/libgcc.a'
                 library.parent.mkdir(parents=True, exist_ok=True)
@@ -44,9 +57,8 @@ def main():
                 if contents is None:
                     raise RuntimeError('libgcc archive member has no contents')
                 library.write_bytes(contents.read())
-            else:
-                members = [member for member in archive if member.name.startswith(('lib/', 'usr/lib/', 'usr/include/', 'usr/bin/ld'))]
-                archive.extractall(root, members=members, filter='data')
+        else:
+            extract(package, path, root)
     assembly = ['.text']
     for name in VARARGS:
         assembly.extend([f'.global __slate_vararg_{name}', f'__slate_vararg_{name}:',
@@ -70,6 +82,85 @@ def main():
         archive.add(root / 'usr/include', arcname='usr/include')
     shutil.copyfile(ROOT / 'www/runtime/sources.json', OUT / 'SOURCES.json')
     print(f'Blink linker and musl runtime ready: {OUT}')
+
+    build_aarch64(OUT, downloads.parent)
+
+
+def build_aarch64(out, downloads_root):
+    sources = json.loads(ARCHIVE_SOURCES.read_text())
+    target_root = out / 'aarch64-sysroot'
+    shutil.rmtree(target_root, ignore_errors=True)
+    target_root.mkdir(parents=True, exist_ok=True)
+    downloads = downloads_root / 'aarch64'
+    downloads.mkdir(parents=True, exist_ok=True)
+    cross_binutils = None
+    for package in sources['packages']:
+        path = download(package, downloads)
+        if package['source'] == 'binutils':
+            cross_binutils = path
+        elif package['source'] == 'compiler-rt':
+            with tarfile.open(path, 'r:*') as archive:
+                member = next(member for member in archive if member.name.endswith(
+                    '/aarch64-alpine-linux-musl/libclang_rt.builtins-aarch64.a'))
+                library = target_root / 'usr/lib/libgcc.a'
+                library.parent.mkdir(parents=True, exist_ok=True)
+                contents = archive.extractfile(member)
+                if contents is None:
+                    raise RuntimeError('compiler-rt archive member has no contents')
+                library.write_bytes(contents.read())
+        elif package['source'] == 'gcc':
+            with tarfile.open(path, 'r:*') as archive:
+                member = next(member for member in archive if member.name.endswith('/libgcc.a'))
+                library = target_root / 'usr/lib/libgcc.a'
+                library.parent.mkdir(parents=True, exist_ok=True)
+                contents = archive.extractfile(member)
+                if contents is None:
+                    raise RuntimeError('libgcc archive member has no contents')
+                library.write_bytes(contents.read())
+        else:
+            extract(package, path, target_root)
+    if cross_binutils is None:
+        raise RuntimeError('missing AArch64 cross-binutils package')
+
+    cross_root = out / 'aarch64-cross-binutils'
+    shutil.rmtree(cross_root, ignore_errors=True)
+    cross_root.mkdir(parents=True, exist_ok=True)
+    cross_package = next(package for package in sources['packages'] if package['source'] == 'binutils')
+    extract(cross_package, cross_binutils, cross_root)
+
+    varargs = out / 'aarch64-varargs.S'
+    names = ['printf', 'fprintf', 'sprintf', 'snprintf', 'scanf', 'fscanf', 'sscanf', 'dprintf',
+             'asprintf', 'open', 'openat', 'fcntl', 'ioctl']
+    lines = ['.text']
+    for name in names:
+        lines.extend([f'.global __slate_vararg_{name}', f'__slate_vararg_{name}:', f'  b {name}'])
+    lines.append('.section .note.GNU-stack,"",%progbits')
+    varargs.write_text('\n'.join(lines) + '\n')
+    wrapper = out / 'aarch64-varargs.o'
+    subprocess.run(['clang', '--target=aarch64-alpine-linux-musl', '-c', str(varargs), '-o', str(wrapper)], check=True)
+    subprocess.run(['llvm-ar', 'rcs', str(target_root / 'usr/lib/libslate.a'), str(wrapper)], check=True)
+
+    runtime = out / 'aarch64-runtime-root'
+    shutil.rmtree(runtime, ignore_errors=True)
+    shutil.copytree(root := out / 'root', runtime, symlinks=True)
+    shutil.copytree(cross_root / 'usr/aarch64-alpine-linux-musl',
+                    runtime / 'usr/aarch64-alpine-linux-musl', symlinks=True)
+    sysroot = runtime / 'sysroots/aarch64'
+    shutil.copytree(target_root, sysroot, symlinks=True)
+    with tarfile.open(out / 'aarch64-runtime.tar.gz', 'w:gz', format=tarfile.USTAR_FORMAT,
+                      dereference=True) as archive:
+        for name in ['lib', 'usr/lib', 'usr/bin/ld', 'usr/bin/ld.bfd']:
+            path = runtime / name
+            if path.exists():
+                archive.add(path, arcname=name)
+        archive.add(runtime / 'usr/aarch64-alpine-linux-musl', arcname='usr/aarch64-alpine-linux-musl')
+        for path in sysroot.rglob('*'):
+            if path.is_file() and not path.is_symlink():
+                archive.add(path, arcname=path.relative_to(runtime))
+    with tarfile.open(out / 'aarch64-headers.tar.gz', 'w:gz', format=tarfile.USTAR_FORMAT, dereference=True) as archive:
+        archive.add(target_root / 'usr/include', arcname='usr/include')
+    shutil.copyfile(ARCHIVE_SOURCES, out / 'AARCH64-SOURCES.json')
+    print(f'AArch64 musl sysroot and cross linker ready: {out}')
 
 
 if __name__ == '__main__':

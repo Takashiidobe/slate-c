@@ -170,13 +170,12 @@ async function run() {
   try {
     const result = await rpc('run', request());
     if (snapshot !== revision) return;
-    if (result.status !== 'ok') throw new Error(result.error);
-    execution.textContent = `Exited with status ${result.exitCode}`;
+    execution.textContent = result.error ? `Failed: ${result.error}` : `Exited with status ${result.exitCode}`;
     stdout.textContent = result.stdout;
     stderr.textContent = result.stderr;
     programOutput.hidden = false;
-    execution.className = 'ok';
-    setStatus(`Ran in ${Math.round(result.ms)} ms.`, 'ok');
+    execution.className = result.error ? 'error' : 'ok';
+    setStatus(`${result.error ? 'Stopped' : 'Ran'} in ${Math.round(result.ms)} ms.`, result.error ? 'error' : 'ok');
   } catch (error) {
     if (snapshot === revision) { fail(error); execution.textContent = 'Waiting'; }
   } finally {

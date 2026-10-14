@@ -8,7 +8,8 @@
   return structured diagnostics to the browser; do not flatten errors into
   strings before rendering or serialization.
 
-- Support x86_64 Linux with the SysV ABI. Do not add other architectures.
+- Support x86_64 Linux with the SysV ABI and AArch64 Linux with the AAPCS64 ABI.
+  Do not add other architectures.
 - Do not write unit tests. Use integration tests and C filetest fixtures.
 - Add lowering regressions under `tests/filetests/`; the harness discovers C
   files recursively and gives each fixture its own test name.

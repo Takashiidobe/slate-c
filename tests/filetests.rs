@@ -100,8 +100,11 @@ fn run(path: &Path) -> Result<()> {
         return Ok(());
     }
     ensure!(
-        cfg!(all(target_arch = "x86_64", target_os = "linux")),
-        "native execution fixtures require x86_64 Linux"
+        cfg!(all(
+            any(target_arch = "x86_64", target_arch = "aarch64"),
+            target_os = "linux"
+        )),
+        "native execution fixtures require x86_64 or AArch64 Linux"
     );
     let exits: Vec<_> = directives
         .iter()

@@ -26,6 +26,7 @@ def main():
                     '--no-default-features', '--features', 'browser', '--bin', 'slate-c-browser'], cwd=ROOT, check=True)
     subprocess.run(['python3', str(ROOT / 'www/blink/build.py'), '--runtime-only'], check=True)
     subprocess.run(['python3', str(ROOT / 'www/runtime/build.py')], check=True)
+    subprocess.run(['python3', str(ROOT / 'www/nixvm/build.py')], check=True)
     blink = ROOT / 'build/blink-demo'
     runtime = ROOT / 'build/blink-runtime'
     if OUT.exists():
@@ -44,10 +45,23 @@ def main():
         'arch': 'x86_64',
         'headers': emit(runtime / 'headers.tar.gz', 'headers/x86_64-musl', 'tar.gz'),
     }
+    manifest['targets']['aarch64-unknown-linux-musl'] = {
+        'arch': 'aarch64',
+        'headers': emit(runtime / 'aarch64-headers.tar.gz', 'headers/aarch64-musl', 'tar.gz'),
+        'runtime': emit(runtime / 'aarch64-runtime.tar.gz', 'runtime/aarch64-musl-linker', 'tar.gz'),
+    }
     manifest['blink'] = {
         'js': emit(blink / 'blink.mjs', 'vendor/blink', 'mjs'),
         'wasm': emit(blink / 'blink.wasm', 'vendor/blink', 'wasm'),
         'runtime': emit(runtime / 'runtime.tar.gz', 'runtime/musl-linker', 'tar.gz'),
+    }
+    nixvm = ROOT / 'build/nixvm/pkg'
+    nixvm_js = ROOT / 'build/nixvm/nixvm-browser.js'
+    nixvm_js.write_text((nixvm / 'nixvm.js').read_text().replace(
+        'from "pktkit"', 'from "./pktkit-shim.js"'))
+    manifest['nixvm'] = {
+        'js': emit(nixvm_js, 'vendor/nixvm', 'mjs'),
+        'wasm': emit(nixvm / 'nixvm_bg.wasm', 'vendor/nixvm', 'wasm'),
     }
     profiles = sorted((header_root / 'compiler-headers').glob('clang-*'))
     if not profiles:
@@ -61,7 +75,9 @@ def main():
     licenses = OUT / 'licenses'
     licenses.mkdir()
     shutil.copyfile(blink / 'BLINK-LICENSE', licenses / 'BLINK-LICENSE')
+    shutil.copyfile(ROOT / 'build/nixvm/nixvm-0.0.3/LICENSE', licenses / 'NIXVM-LICENSE')
     shutil.copyfile(runtime / 'SOURCES.json', licenses / 'RUNTIME-SOURCES.json')
+    shutil.copyfile(runtime / 'AARCH64-SOURCES.json', licenses / 'AARCH64-RUNTIME-SOURCES.json')
     shutil.copyfile(ROOT / 'runtime/softfloat/vendor/COPYING.txt', licenses / 'SOFTFLOAT-LICENSE.txt')
     shutil.copyfile(ROOT / 'runtime/softfloat/SOURCE.json', licenses / 'SOFTFLOAT-SOURCE.json')
     shutil.copytree(ROOT / 'www/runtime/licenses', licenses / 'runtime')

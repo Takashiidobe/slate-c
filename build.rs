@@ -7,7 +7,10 @@ fn main() {
     if env::var_os("CARGO_FEATURE_NATIVE").is_none() {
         return;
     }
-    assert_eq!(env::var("CARGO_CFG_TARGET_ARCH").unwrap(), "x86_64");
+    assert!(matches!(
+        env::var("CARGO_CFG_TARGET_ARCH").unwrap().as_str(),
+        "x86_64" | "aarch64"
+    ));
     assert_eq!(env::var("CARGO_CFG_TARGET_OS").unwrap(), "linux");
     let root = PathBuf::from("runtime/softfloat");
     let mut build = cc::Build::new();

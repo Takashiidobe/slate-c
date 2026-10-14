@@ -6,6 +6,7 @@ const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
 
 const ARCHES = {
   x86_64: { target: 0, unit: () => 1 },
+  aarch64: { target: 1, unit: () => 4 },
 };
 
 export const ARCH_NAMES = Object.keys(ARCHES);

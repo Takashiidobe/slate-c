@@ -76,7 +76,10 @@ pub fn flag_schema(target: &str) -> Result<Vec<FlagInfo>> {
 pub fn compile(request: &CompileRequest) -> Result<Compilation> {
     if !(matches!(
         request.target.as_str(),
-        "x86_64-unknown-linux-gnu" | "x86_64-unknown-linux-musl"
+        "x86_64-unknown-linux-gnu"
+            | "x86_64-unknown-linux-musl"
+            | "aarch64-unknown-linux-gnu"
+            | "aarch64-unknown-linux-musl"
     )) {
         return Err(CompilerError::Configuration(format!(
             "unsupported target {}",

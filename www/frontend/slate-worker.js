@@ -1,6 +1,6 @@
 import { ConsoleStdout, Directory, File, OpenFile, PreopenDirectory, WASI } from './vendor/browser_wasi_shim/index.js';
 import { createDisassembler } from './disasm.mjs';
-import { runProgram } from './blink.mjs';
+import { linkProgram, runProgram } from './blink.mjs';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -10,6 +10,8 @@ let manifest;
 let compiler;
 let capstone;
 let running;
+let nixvm;
+let nixvmStartupMs;
 
 function status(id, text) { postMessage({ type: 'status', id, text }); }
 
@@ -120,12 +122,66 @@ async function compile(request, id) {
   return { ...compilation, ms };
 }
 
+async function initNixvm() {
+  if (nixvm) return nixvm;
+  const started = performance.now();
+  const [wasm, js] = await Promise.all([bytes(manifest.nixvm.wasm), import(new URL(manifest.nixvm.js, self.location).href)]);
+  await js.default(await WebAssembly.compile(wasm));
+  nixvmStartupMs = performance.now() - started;
+  nixvm = js;
+  return nixvm;
+}
+
+function filesFrom(directory) {
+  const files = [];
+  const flatten = (node, prefix = '') => {
+    for (const [name, entry] of node.contents) {
+      const path = `${prefix}/${name}`;
+      if (entry instanceof Directory) flatten(entry, path);
+      else files.push({ path, bytes: entry.data });
+    }
+  };
+  flatten(directory);
+  return files;
+}
+
 async function run(request, id) {
   if (running) throw new Error('A program is already running.');
   if (compiled?.key !== key(request)) await compile(request, id);
   running = new AbortController();
   try {
     const started = performance.now();
+    const target = manifest.targets[request.target];
+    if (target.arch === 'aarch64') {
+      status(id, 'Loading AArch64 linker and nixvm…');
+      const [blinkWasm, runtime, guest] = await Promise.all([
+        bytes(manifest.blink.wasm), archive(target.runtime), initNixvm(),
+      ]);
+      if (running.signal.aborted) throw new Error('Execution cancelled.');
+      const linked = await linkProgram(compiled.compilation.object, {
+        wasm: blinkWasm,
+        js: new URL(manifest.blink.js, self.location).href,
+        files: filesFrom(runtime),
+      }, running.signal, text => status(id, text), 'aarch64');
+      status(id, 'Running in nixvm…');
+      const guestStarted = performance.now();
+      const outcome = JSON.parse(guest.run_elf(linked.executable));
+      const unsupported = outcome.unsupported_syscalls
+        .map(({ nr, count }) => `${nr} (${count})`).join(', ');
+      return {
+        status: outcome.ok ? 'ok' : 'error',
+        error: outcome.error,
+        exitCode: outcome.exit_code,
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+        backend: 'nixvm AArch64',
+        unsupportedSyscalls: unsupported,
+        linkMs: linked.linkMs,
+        guestMs: performance.now() - guestStarted,
+        runnerMs: nixvmStartupMs,
+        ms: performance.now() - started,
+      };
+    }
     status(id, 'Loading Blink and linker…');
     const signal = running.signal;
     const load = Promise.all([bytes(manifest.blink.wasm), archive(manifest.blink.runtime)]);
@@ -148,7 +204,7 @@ async function run(request, id) {
     const result = await runProgram(compiled.compilation.object,
       { wasm, js: new URL(manifest.blink.js, self.location).href, files },
       running.signal, text => status(id, text));
-    return { ...result, ms: performance.now() - started };
+    return { ...result, backend: 'Blink', ms: performance.now() - started };
   } finally { running = null; }
 }
 

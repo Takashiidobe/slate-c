@@ -16,6 +16,8 @@ fn emits_target_selected_elf_with_frontend_defines() {
     for (target, machine) in [
         ("x86_64-unknown-linux-gnu", 62),
         ("x86_64-unknown-linux-musl", 62),
+        ("aarch64-unknown-linux-gnu", 183),
+        ("aarch64-unknown-linux-musl", 183),
     ] {
         let output = compile(&request(target)).unwrap();
         assert_eq!(&output.object[..4], b"\x7fELF");
@@ -31,7 +33,7 @@ fn emits_target_selected_elf_with_frontend_defines() {
 fn rejects_conflicting_and_unimplemented_flags() {
     for flag in [
         "-m32",
-        "--target=aarch64-unknown-linux-gnu",
+        "--target=riscv64gc-unknown-linux-gnu",
         "-O2",
         "-fstack-protector",
     ] {
