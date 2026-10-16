@@ -98,8 +98,21 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                     ));
                 }
                 let pointer = self.place(place)?;
+                let source_ty = value.ty.clone();
                 let value = self.value(value)?;
-                self.write_value(pointer, &place.ty, value)?;
+                if let c::PlaceKind::Field {
+                    bits: Some(bits), ..
+                } = &place.kind
+                {
+                    let LoweredValue::Scalar(value) = value else {
+                        return Err(CompilerError::InvalidIr(
+                            "bit-field assignment requires a scalar value".into(),
+                        ));
+                    };
+                    self.write_bitfield(pointer, bits, value, &source_ty)?;
+                } else {
+                    self.write_value(pointer, &place.ty, value)?;
+                }
             }
             Statement::If {
                 condition,

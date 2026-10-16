@@ -37,10 +37,10 @@ impl<M: Module> ModuleLowerer<'_, '_, M> {
         Ok(match self.resolved(ty)? {
             Type::Bool => types::I8,
             Type::Numeric(NumericType::Integer { width, .. }) => match width {
-                8 => types::I8,
-                16 => types::I16,
-                32 => types::I32,
-                64 => types::I64,
+                1..=8 => types::I8,
+                9..=16 => types::I16,
+                17..=32 => types::I32,
+                33..=64 => types::I64,
                 _ => {
                     return Err(CompilerError::Unsupported(format!(
                         "integer width {width} is not supported"

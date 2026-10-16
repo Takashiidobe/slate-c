@@ -15,7 +15,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         if old == to {
             return Ok(value);
         }
-        Ok(if old.is_int() && to.is_int() {
+        let mut result = if old.is_int() && to.is_int() {
             if old.bits() > to.bits() {
                 self.builder.ins().ireduce(to, value)
             } else if self.module.signed(from) {
@@ -39,7 +39,25 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             self.builder.ins().fpromote(to, value)
         } else {
             self.builder.ins().fdemote(to, value)
-        })
+        };
+        if let Ok(Type::Numeric(NumericType::Integer {
+            width,
+            signed,
+            bit_precise: true,
+        })) = self.module.resolved(from)
+        {
+            let width = *width;
+            if width < to.bits() {
+                let mask = (1u64 << width) - 1;
+                result = self.builder.ins().band_imm_s(result, mask as i64);
+                if *signed {
+                    let shift = to.bits() - width;
+                    result = self.builder.ins().ishl_imm_s(result, shift as i64);
+                    result = self.builder.ins().sshr_imm_s(result, shift as i64);
+                }
+            }
+        }
+        Ok(result)
     }
 
     pub(super) fn condition(&mut self, value: &c::Value) -> Result<clif::Value> {
