@@ -183,19 +183,19 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                 self.initialize(pointer, &place.ty, initializer)?;
                 Ok(pointer)
             }
-            PlaceKind::Field {
-                base,
-                index,
-                bits: None,
-            } => {
-                let offset = *self
-                    .module
-                    .record_layout(&base.ty)?
-                    .offsets
-                    .get(*index)
-                    .ok_or_else(|| {
-                        CompilerError::InvalidIr("record field index out of bounds".into())
-                    })?;
+            PlaceKind::Field { base, index, bits } => {
+                let offset = if let Some(bits) = bits {
+                    bits.unit_offset
+                } else {
+                    *self
+                        .module
+                        .record_layout(&base.ty)?
+                        .offsets
+                        .get(*index)
+                        .ok_or_else(|| {
+                            CompilerError::InvalidIr("record field index out of bounds".into())
+                        })?
+                };
                 let pointer = self.place(base)?;
                 Ok(self.builder.ins().iadd_imm_s(pointer, offset as i64))
             }

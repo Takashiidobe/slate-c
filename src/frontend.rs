@@ -10,6 +10,7 @@ pub fn parse(source: &str, target: &str) -> Result<slate::Module> {
 
 pub(crate) struct Parsed {
     pub module: slate::Module,
+    #[cfg(feature = "browser")]
     pub ast_sexpr: String,
     #[cfg(any(feature = "native", feature = "browser"))]
     pub files: slate_parser::files::Files,
@@ -36,6 +37,7 @@ pub(crate) fn parse_with(parser: &mut Parser, source: &str) -> Result<Parsed> {
     slate_parser::render::SExprRenderer::new(&mut ast_sexpr).render(&unit)?;
     Ok(Parsed {
         module,
+        #[cfg(feature = "browser")]
         ast_sexpr: String::from_utf8_lossy(&ast_sexpr).into_owned(),
         #[cfg(any(feature = "native", feature = "browser"))]
         files,

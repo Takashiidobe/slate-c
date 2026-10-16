@@ -34,6 +34,54 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                     ));
                 };
                 let address = self.place(place)?;
+                if let c::PlaceKind::Field {
+                    bits: Some(bits), ..
+                } = &place.kind
+                {
+                    let (storage_ty, storage_bits) = match bits.unit_size {
+                        1 => (types::I8, 8u64),
+                        2 => (types::I16, 16u64),
+                        4 => (types::I32, 32u64),
+                        8 => (types::I64, 64u64),
+                        size => {
+                            return Err(CompilerError::Unsupported(format!(
+                                "bit-field storage unit of {size} bytes is not supported"
+                            )));
+                        }
+                    };
+                    if bits.width == 0
+                        || u64::from(bits.width) > storage_bits
+                        || bits.bit_offset + u64::from(bits.width) > storage_bits
+                    {
+                        return Err(CompilerError::InvalidIr(
+                            "bit-field does not fit its storage unit".into(),
+                        ));
+                    }
+                    let mut result =
+                        self.builder
+                            .ins()
+                            .load(storage_ty, MemFlagsData::new(), address, 0);
+                    if bits.bit_offset != 0 {
+                        result = self
+                            .builder
+                            .ins()
+                            .ushr_imm_s(result, bits.bit_offset as i64);
+                    }
+                    if u64::from(bits.width) < storage_bits {
+                        let mask = (1u64 << bits.width) - 1;
+                        result = self.builder.ins().band_imm_s(result, mask as i64);
+                        if self.module.signed(&place.ty) {
+                            let shift = storage_bits - u64::from(bits.width);
+                            result = self.builder.ins().ishl_imm_s(result, shift as i64);
+                            result = self.builder.ins().sshr_imm_s(result, shift as i64);
+                        }
+                    }
+                    let output = self.module.scalar(&value.ty)?;
+                    if self.builder.func.dfg.value_type(result) != output {
+                        result = self.cast(result, &place.ty, output)?;
+                    }
+                    return Ok(LoweredValue::Scalar(result));
+                }
                 if self.module.aggregate(&value.ty)? {
                     let snapshot = self.temporary(&value.ty)?;
                     self.copy_object(snapshot, address, &value.ty)?;
@@ -79,6 +127,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                         "atomic stores are not supported".to_string(),
                     ));
                 };
+                if matches!(place.kind, c::PlaceKind::Field { bits: Some(_), .. }) {
+                    return Err(CompilerError::Unsupported(
+                        "bit-field stores are not supported".into(),
+                    ));
+                }
                 let pointer = self.place(place)?;
                 let output = self.value(operand)?;
                 self.write_value(pointer, &place.ty, output)?;
@@ -95,6 +148,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                         "atomic updates are not supported".to_string(),
                     ));
                 };
+                if matches!(place.kind, c::PlaceKind::Field { bits: Some(_), .. }) {
+                    return Err(CompilerError::Unsupported(
+                        "bit-field updates are not supported".into(),
+                    ));
+                }
                 let pointer = self.place(place)?;
                 let before = self.builder.ins().load(
                     self.module.scalar(&place.ty)?,
