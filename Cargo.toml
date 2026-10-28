@@ -10,9 +10,15 @@ test = false
 
 [[test]]
 name = "filetests"
-path = "tests/filetests.rs"
+path = "tests/filetests/native.rs"
 harness = false
 required-features = ["native"]
+
+[[test]]
+name = "cross"
+path = "tests/filetests/cross.rs"
+harness = false
+required-features = ["browser"]
 
 [[bin]]
 name = "slate-c"

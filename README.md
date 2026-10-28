@@ -73,8 +73,8 @@ unsupported language features produce compiler errors. See the
 The native commands currently support constant-return programs:
 
 ```sh
-cargo run --bin slate-c -- run tests/fixtures/return42.c
-cargo run --bin slate-c -- object tests/fixtures/return42.c target/return42.o
+cargo run --bin slate-c -- run tests/filetests/runtime/return42.c
+cargo run --bin slate-c -- object tests/filetests/runtime/return42.c target/return42.o
 cc target/return42.o -o target/return42
 ```
 

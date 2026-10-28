@@ -19,7 +19,8 @@ int main(void) { return 42; }
 exit code in 0..=255. Unspecified stdout and stderr must be empty.
 Add `STDOUT: check: text` or `STDERR: check: text` to match output.
 
-Use `MODE: compile` for CLIF fixtures without linking or execution:
+Use `MODE: compile` to check ELF emission without linking or execution.
+Add focused CLIF checks when useful:
 
 ```c
 // MODE: compile
@@ -35,9 +36,9 @@ it with `$name`. Add channel-specific patterns with
 `CLIF: regex: name=pattern`. CLIF records lowering before backend optimization.
 Execution fixtures can also include CLIF checks.
 
-Every C fixture under `runtime/builtins/` also runs in a separate JIT process.
+Every C fixture under `runtime/` also runs in a separate JIT process.
 Both runs use the same exit, stdout, and stderr checks and five-second timeout.
-Add fixtures there to exercise builtin lowering and runtime symbol resolution.
+Add runtime fixtures there; both runners discover them recursively.
 
 The builtin experiment uses system libc, libm, and GCC's libgcc. Install the
 native GCC runtime development files before building; the JIT explicitly links
@@ -56,6 +57,29 @@ Use `MODE: error` with required `ERROR: check: text` directives for expected
 compiler failures. Checks match rendered miette diagnostics, including source
 labels and diagnostic codes. Replace unsupported-feature fixtures with execution
 fixtures when implementing the feature.
+
+Use `MODE: jit-error` for sources rejected by the JIT entry-point checks.
+Every error fixture also runs through the CLI, checking failure status, empty
+stdout, stderr diagnostics, source filenames, and absence of an output object.
+
+Diagnostic fixtures can add these structured assertions:
+
+- `DIAGNOSTIC: lowering|frontend|semantic`: expected error variant.
+- `LABEL: text`: one primary label at the last occurrence of `text` in the file.
+- `LABEL-MIN: bytes`: minimum primary label length, default 1.
+- `RELATED: count`: minimum related-error count; each must retain source labels.
+- `CODE: code`: exact diagnostic code.
+
+With the `browser` feature, these assertions also check serialized labels,
+source lines, diagnostic codes, rendered messages, and related errors.
+
+Run `cargo test --features browser` to include cross-compilation fixtures from
+`cross/`. Use `cargo test --no-default-features --features browser --test cross`
+to run only that runner. These tests emit objects without browser execution.
+Every `TARGET: triple` directive creates a separate named test that checks the
+ELF machine. `C-FLAGS:` and `CLIF-FLAGS:` take whitespace-separated flags;
+`FUNCTIONS: count` checks emitted function count. Cross fixtures accept `CLIF:`
+checks on success and require `ERROR:` checks for expected failures.
 
 Each channel accepts Rust FileCheck's `check`, `nextln`, `sameln`,
 `unordered`, `not`, and `regex` directives. `empty` requires an empty stream
