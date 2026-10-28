@@ -12,10 +12,28 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         to: clif::Type,
     ) -> Result<clif::Value> {
         let old = self.builder.func.dfg.value_type(value);
+        let mut value = value;
+        if let Ok(Type::Numeric(NumericType::Integer {
+            width,
+            signed,
+            bit_precise: true,
+        })) = self.module.resolved(from)
+        {
+            let width = *width;
+            if width < old.bits() {
+                let mask = (1u64 << width) - 1;
+                value = self.builder.ins().band_imm_s(value, mask as i64);
+                if *signed {
+                    let shift = old.bits() - width;
+                    value = self.builder.ins().ishl_imm_s(value, shift as i64);
+                    value = self.builder.ins().sshr_imm_s(value, shift as i64);
+                }
+            }
+        }
         if old == to {
             return Ok(value);
         }
-        let mut result = if old.is_int() && to.is_int() {
+        let result = if old.is_int() && to.is_int() {
             if old.bits() > to.bits() {
                 self.builder.ins().ireduce(to, value)
             } else if self.module.signed(from) {
@@ -40,23 +58,6 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
         } else {
             self.builder.ins().fdemote(to, value)
         };
-        if let Ok(Type::Numeric(NumericType::Integer {
-            width,
-            signed,
-            bit_precise: true,
-        })) = self.module.resolved(from)
-        {
-            let width = *width;
-            if width < to.bits() {
-                let mask = (1u64 << width) - 1;
-                result = self.builder.ins().band_imm_s(result, mask as i64);
-                if *signed {
-                    let shift = to.bits() - width;
-                    result = self.builder.ins().ishl_imm_s(result, shift as i64);
-                    result = self.builder.ins().sshr_imm_s(result, shift as i64);
-                }
-            }
-        }
         Ok(result)
     }
 

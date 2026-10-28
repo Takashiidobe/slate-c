@@ -7,6 +7,7 @@ use slate_parser::ir::{self as c, BindingId};
 use std::collections::HashMap;
 
 mod arithmetic;
+mod bitfields;
 mod builtins;
 mod calls;
 mod control;

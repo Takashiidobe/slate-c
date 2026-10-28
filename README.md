@@ -59,6 +59,12 @@ Browser execution requires `int main(void)`. You can use scalar functions,
 locals, globals, arithmetic, conditionals, loops, pointers, and strings. Other
 constructs may produce unsupported-feature errors.
 
+Bit-field reads, assignments, and updates support packed records, unions,
+allocation-unit boundaries, and zero-width separators on x86_64 SysV and
+AArch64 AAPCS64. Fields can be up to 64 bits wide, including unaligned fields
+spanning nine bytes. Volatile and atomic accesses and bit-field initializers
+still produce unsupported-feature diagnostics.
+
 Programs link statically with musl. x86_64 executes with Blink, and AArch64
 executes with nixvm without booting Linux. Formatted output, allocation,
 strings, and file I/O depend on the selected backend's supported syscalls.
