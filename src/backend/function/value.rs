@@ -360,9 +360,7 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
             ValueKind::Shuffle { .. } => Err(CompilerError::Unsupported(
                 "vector shuffles are not supported".into(),
             )),
-            ValueKind::Intrinsic { .. } => Err(CompilerError::Unsupported(
-                "intrinsic expressions are not supported".into(),
-            )),
+            ValueKind::Intrinsic { name, arguments } => self.intrinsic(name, arguments, &value.ty),
             ValueKind::Call {
                 callee: c::Callee::Indirect(_),
                 ..

@@ -10,9 +10,38 @@ macro_rules! helpers {
         }
 
         pub(crate) fn register(builder: &mut JITBuilder) {
+            register_libraries(builder);
             $(builder.symbol(stringify!($name), $name as *const u8);)*
         }
     };
+}
+
+macro_rules! libraries {
+    ($(fn $name:ident($($argument:ident: $ty:ty),*) -> $result:ty;)*) => {
+        #[link(name = "m")]
+        #[link(name = "gcc")]
+        unsafe extern "C" {
+            $(fn $name($($argument: $ty),*) -> $result;)*
+        }
+
+        fn register_libraries(builder: &mut JITBuilder) {
+            $(builder.symbol(stringify!($name), $name as *const u8);)*
+        }
+    };
+}
+
+libraries! {
+    fn memcpy(dest: *mut c_void, src: *const c_void, size: usize) -> *mut c_void;
+    fn memmove(dest: *mut c_void, src: *const c_void, size: usize) -> *mut c_void;
+    fn memset(dest: *mut c_void, value: i32, size: usize) -> *mut c_void;
+    fn memcmp(left: *const c_void, right: *const c_void, size: usize) -> i32;
+    fn sqrt(value: f64) -> f64;
+    fn sqrtf(value: f32) -> f32;
+    fn fma(a: f64, b: f64, c: f64) -> f64;
+    fn fmaf(a: f32, b: f32, c: f32) -> f32;
+    fn sin(value: f64) -> f64;
+    fn cos(value: f64) -> f64;
+    fn __popcountdi2(value: u64) -> i32;
 }
 
 helpers! {

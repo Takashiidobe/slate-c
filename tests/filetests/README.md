@@ -4,7 +4,7 @@ Run `cargo test --test filetests`. The harness discovers every `.c` file in
 this directory recursively. Filter by path with
 `cargo test --test filetests -- runtime/control`.
 
-Execution requires x86_64 Linux and a C linker (`CC`, default `cc`). Each
+Execution requires x86_64 or AArch64 Linux and a C linker (`CC`, default `cc`). Each
 program runs in a temporary directory with closed stdin and a five-second
 timeout. Signals and timeouts fail the test.
 
@@ -34,6 +34,23 @@ function references. Capture an identifier with `$(name=$var)` and reuse
 it with `$name`. Add channel-specific patterns with
 `CLIF: regex: name=pattern`. CLIF records lowering before backend optimization.
 Execution fixtures can also include CLIF checks.
+
+Every C fixture under `runtime/builtins/` also runs in a separate JIT process.
+Both runs use the same exit, stdout, and stderr checks and five-second timeout.
+Add fixtures there to exercise builtin lowering and runtime symbol resolution.
+
+The builtin experiment uses system libc, libm, and GCC's libgcc. Install the
+native GCC runtime development files before building; the JIT explicitly links
+libm and libgcc, and object tests use the C driver's runtime selection. The
+compiler helper fixture requires `__popcountdi2`. These libraries are not bundled.
+Cross-target objects require matching target libraries when linked.
+
+The initial builtin support covers scalar elementwise popcount and FMA,
+`__builtin_memcpy`, `__builtin_memmove`, `__builtin_memset`,
+`__builtin_memcmp`, `__builtin_sqrt[f]`, `__builtin_fma[f]`,
+`__builtin_sin`, and `__builtin_cos`. Other remaining `__builtin_` calls and
+intrinsic nodes produce lowering diagnostics. Browser builds can emit objects
+using the shared lowering; runtime libraries must be supplied when linking.
 
 Use `MODE: error` with required `ERROR: check: text` directives for expected
 compiler failures. Checks match rendered miette diagnostics, including source

@@ -221,6 +221,11 @@ impl<M: Module> FunctionLowerer<'_, '_, '_, '_, M> {
                     "SEH statements are not supported".into(),
                 ));
             }
+            Statement::OmpParallel(_) | Statement::OmpFor(_) => {
+                return Err(CompilerError::Unsupported(
+                    "OpenMP statements are not supported".into(),
+                ));
+            }
             Statement::SehLeave(..) => {
                 return Err(CompilerError::Unsupported(
                     "SEH leave statements are not supported".into(),

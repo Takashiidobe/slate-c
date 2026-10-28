@@ -66,7 +66,7 @@ fn check(source: &str, channel: &str, output: &str, required: bool) -> Result<()
     Ok(())
 }
 
-fn run(path: &Path) -> Result<()> {
+fn run(path: &Path, jit: bool) -> Result<()> {
     let source = fs::read_to_string(path)?;
     let directives: Vec<_> = source
         .lines()
@@ -119,23 +119,32 @@ fn run(path: &Path) -> Result<()> {
     let directory = tempfile::tempdir()?;
     let object = directory.path().join("input.o");
     let executable = directory.path().join("program");
-    fs::write(&object, compilation.object)?;
-    let linker = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
-        .arg(&object)
-        .arg(slate_c::runtime::ARCHIVE)
-        .arg("-o")
-        .arg(&executable)
-        .arg("-lm")
-        .output()
-        .context("invoke native C linker (CC, default cc)")?;
-    ensure!(
-        linker.status.success(),
-        "link failed:\n{}",
-        String::from_utf8_lossy(&linker.stderr)
-    );
+    if !jit {
+        fs::write(&object, compilation.object)?;
+        let linker = Command::new(std::env::var_os("CC").unwrap_or_else(|| "cc".into()))
+            .arg(&object)
+            .arg(slate_c::runtime::ARCHIVE)
+            .arg("-o")
+            .arg(&executable)
+            .arg("-lm")
+            .output()
+            .context("invoke native C linker (CC, default cc)")?;
+        ensure!(
+            linker.status.success(),
+            "link failed:\n{}",
+            String::from_utf8_lossy(&linker.stderr)
+        );
+    }
     let stdout = directory.path().join("stdout");
     let stderr = directory.path().join("stderr");
-    let mut child = Command::new(&executable)
+    let mut command = if jit {
+        let mut command = Command::new(std::env::current_exe()?);
+        command.arg("--jit-fixture").arg(path);
+        command
+    } else {
+        Command::new(&executable)
+    };
+    let mut child = command
         .current_dir(directory.path())
         .stdin(Stdio::null())
         .stdout(File::create(&stdout)?)
@@ -165,6 +174,18 @@ fn run(path: &Path) -> Result<()> {
 }
 
 fn main() {
+    let mut worker_args = std::env::args_os().skip(1);
+    if worker_args.next().as_deref() == Some(std::ffi::OsStr::new("--jit-fixture")) {
+        let path = worker_args.next().expect("JIT fixture path");
+        let source = fs::read_to_string(path).expect("read JIT fixture");
+        match slate_c::native::run(&source) {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("{}", slate_c::diagnostics::render(&error));
+                std::process::exit(1);
+            }
+        }
+    }
     let arguments = Arguments::from_args();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/filetests");
     let mut paths = Vec::new();
@@ -173,15 +194,23 @@ fn main() {
     assert!(!paths.is_empty(), "no filetest fixtures found");
     let tests = paths
         .into_iter()
-        .map(|path| {
+        .flat_map(|path| {
             let name = path
                 .strip_prefix(&root)
                 .unwrap()
                 .to_string_lossy()
                 .into_owned();
-            Trial::test(name, move || {
-                run(&path).map_err(|error| format!("{error:#}").into())
-            })
+            let mut tests = Vec::new();
+            if path.starts_with(root.join("runtime/builtins")) {
+                let jit_path = path.clone();
+                tests.push(Trial::test(format!("jit/{name}"), move || {
+                    run(&jit_path, true).map_err(|error| format!("{error:#}").into())
+                }));
+            }
+            tests.push(Trial::test(name, move || {
+                run(&path, false).map_err(|error| format!("{error:#}").into())
+            }));
+            tests
         })
         .collect();
     libtest_mimic::run(&arguments, tests).exit();
